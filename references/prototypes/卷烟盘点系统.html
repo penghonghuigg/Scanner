@@ -1,0 +1,1138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>涉案卷烟智能盘点</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --text: #17202a;
+      --muted: #667085;
+      --line: #e4e7ec;
+      --primary: #176b5b;
+      --primary-dark: #0f5548;
+      --primary-soft: #eaf5f2;
+      --danger: #b42318;
+      --danger-soft: #fef3f2;
+      --warning: #b54708;
+      --shadow: 0 10px 28px rgba(16, 24, 40, 0.07);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+      font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif;
+      font-size: 14px;
+    }
+
+    button, input { font: inherit; }
+
+    .page {
+      width: min(1440px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 42px;
+    }
+
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .title-wrap h1 {
+      margin: 0 0 8px;
+      font-size: clamp(24px, 3vw, 34px);
+      letter-spacing: -0.5px;
+    }
+
+    .title-wrap p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .mode-badge {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 13px;
+      border: 1px solid #b7ddd5;
+      border-radius: 999px;
+      color: var(--primary-dark);
+      background: var(--primary-soft);
+      font-weight: 700;
+    }
+
+    .mode-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--primary);
+      box-shadow: 0 0 0 4px rgba(23, 107, 91, 0.12);
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .summary-card,
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      border-radius: var(--radius);
+    }
+
+    .summary-card { padding: 18px; }
+
+    .summary-label {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    .summary-value {
+      font-size: 27px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .summary-unit {
+      margin-left: 4px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .summary-note {
+      margin-top: 9px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .scan-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(330px, 0.75fr);
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .panel { padding: 20px; }
+
+    .panel-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 15px;
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 17px;
+    }
+
+    .catalog-note {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .scan-box {
+      display: flex;
+      align-items: stretch;
+      gap: 10px;
+    }
+
+    .input-wrap {
+      position: relative;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .barcode-input {
+      width: 100%;
+      height: 58px;
+      padding: 0 92px 0 18px;
+      border: 2px solid #cfd6dc;
+      border-radius: 12px;
+      outline: none;
+      background: #fff;
+      color: #101828;
+      font-size: clamp(18px, 2.4vw, 25px);
+      font-weight: 750;
+      letter-spacing: 1.6px;
+      transition: border-color .15s, box-shadow .15s, background .15s;
+    }
+
+    .barcode-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px rgba(23, 107, 91, 0.12);
+    }
+
+    .barcode-input.error {
+      border-color: var(--danger);
+      background: var(--danger-soft);
+      box-shadow: 0 0 0 4px rgba(180, 35, 24, 0.09);
+    }
+
+    .digit-count {
+      position: absolute;
+      right: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .primary-btn,
+    .ghost-btn,
+    .danger-btn,
+    .icon-btn {
+      border: 0;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform .08s, opacity .15s, background .15s;
+    }
+
+    button:active { transform: translateY(1px); }
+
+    .primary-btn {
+      min-width: 106px;
+      padding: 0 18px;
+      color: #fff;
+      background: var(--primary);
+      font-weight: 750;
+    }
+
+    .primary-btn:hover { background: var(--primary-dark); }
+
+    .scan-hint {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .status-message {
+      margin-top: 14px;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      padding: 10px 13px;
+      border-radius: 10px;
+      color: var(--muted);
+      background: #f8fafb;
+      border: 1px solid #edf0f2;
+    }
+
+    .status-message.success {
+      color: var(--primary-dark);
+      background: var(--primary-soft);
+      border-color: #c8e5de;
+    }
+
+    .status-message.error {
+      color: var(--danger);
+      background: var(--danger-soft);
+      border-color: #fecdca;
+    }
+
+    .match-card {
+      min-height: 188px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .match-empty {
+      flex: 1;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+      line-height: 1.7;
+      border: 1px dashed #d7dce1;
+      border-radius: 12px;
+      background: #fafbfc;
+      padding: 22px;
+    }
+
+    .match-content { display: none; }
+
+    .match-content.active {
+      display: block;
+      animation: fadeIn .15s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .match-name {
+      margin: 3px 0 13px;
+      font-size: 21px;
+      font-weight: 800;
+      line-height: 1.4;
+    }
+
+    .match-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 16px;
+    }
+
+    .match-field span {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .match-field strong {
+      font-size: 14px;
+      word-break: break-all;
+    }
+
+    .table-panel { padding: 0; overflow: hidden; }
+
+    .table-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .toolbar-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .ghost-btn,
+    .danger-btn {
+      height: 38px;
+      padding: 0 13px;
+      font-weight: 700;
+    }
+
+    .ghost-btn {
+      color: #344054;
+      background: #f2f4f7;
+    }
+
+    .ghost-btn:hover { background: #e9edf1; }
+
+    .danger-btn {
+      color: var(--danger);
+      background: var(--danger-soft);
+    }
+
+    .danger-btn:hover { background: #fee4e2; }
+
+    .table-wrap {
+      overflow-x: auto;
+      max-height: 540px;
+    }
+
+    table {
+      width: 100%;
+      min-width: 1160px;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+
+    th, td {
+      padding: 13px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--line);
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      color: #475467;
+      background: #f8fafb;
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    tbody tr:hover { background: #fbfcfd; }
+
+    tbody tr:last-child td { border-bottom: 0; }
+
+    .name-cell {
+      min-width: 210px;
+      font-weight: 750;
+    }
+
+    .barcode-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .barcode-tag {
+      display: inline-flex;
+      width: max-content;
+      padding: 3px 7px;
+      color: #344054;
+      background: #f2f4f7;
+      border-radius: 6px;
+    }
+
+    .money {
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+    }
+
+    .qty-control {
+      display: inline-flex;
+      align-items: center;
+      overflow: hidden;
+      border: 1px solid #d0d5dd;
+      border-radius: 9px;
+      background: #fff;
+    }
+
+    .qty-control button {
+      width: 32px;
+      height: 32px;
+      border: 0;
+      background: #f8fafb;
+      cursor: pointer;
+      color: #344054;
+      font-size: 18px;
+    }
+
+    .qty-control button:hover { background: #eef1f4; }
+
+    .qty-control input {
+      width: 48px;
+      height: 32px;
+      border: 0;
+      border-left: 1px solid #e4e7ec;
+      border-right: 1px solid #e4e7ec;
+      outline: none;
+      text-align: center;
+      color: #101828;
+      font-weight: 800;
+      appearance: textfield;
+    }
+
+    .qty-control input::-webkit-outer-spin-button,
+    .qty-control input::-webkit-inner-spin-button {
+      margin: 0;
+      appearance: none;
+    }
+
+    .icon-btn {
+      width: 34px;
+      height: 34px;
+      color: var(--danger);
+      background: transparent;
+      font-size: 17px;
+    }
+
+    .icon-btn:hover { background: var(--danger-soft); }
+
+    .empty-row td {
+      padding: 54px 20px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .toast {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 99;
+      max-width: min(380px, calc(100% - 44px));
+      padding: 12px 16px;
+      color: #fff;
+      background: #17202a;
+      border-radius: 10px;
+      box-shadow: 0 12px 28px rgba(16, 24, 40, .22);
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: opacity .18s, transform .18s;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 960px) {
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .scan-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 620px) {
+      .page { width: min(100% - 20px, 1440px); padding-top: 18px; }
+      .header { flex-direction: column; }
+      .summary { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .summary-card { padding: 15px; }
+      .summary-value { font-size: 23px; }
+      .scan-box { flex-direction: column; }
+      .primary-btn { height: 48px; }
+      .scan-hint, .footer { flex-direction: column; }
+      .table-toolbar { align-items: flex-start; flex-direction: column; }
+      .toolbar-actions { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <div class="title-wrap">
+        <h1>涉案卷烟智能盘点</h1>
+        <p>条码自动识别、同品规实时累加，统计结果保存在当前浏览器中。</p>
+      </div>
+      <div class="mode-badge"><span class="mode-dot"></span>本地离线模式</div>
+    </header>
+
+    <section class="summary" aria-label="盘点汇总">
+      <article class="summary-card">
+        <div class="summary-label">累计扫描数量</div>
+        <div class="summary-value"><span id="totalQty">0</span><span class="summary-unit">条</span></div>
+        <div class="summary-note">包含手动调整后的数量</div>
+      </article>
+      <article class="summary-card">
+        <div class="summary-label">已盘品规</div>
+        <div class="summary-value"><span id="specCount">0</span><span class="summary-unit">种</span></div>
+        <div class="summary-note">按标准卷烟名称合并</div>
+      </article>
+      <article class="summary-card">
+        <div class="summary-label">参考零售价合计</div>
+        <div class="summary-value"><span id="totalValue">¥0.00</span></div>
+        <div class="summary-note">数量 × 数据库零售价</div>
+      </article>
+      <article class="summary-card">
+        <div class="summary-label">未识别条码</div>
+        <div class="summary-value"><span id="unknownCount">0</span><span class="summary-unit">次</span></div>
+        <div class="summary-note">可在扫码流水中追溯</div>
+      </article>
+    </section>
+
+    <section class="scan-grid">
+      <article class="panel">
+        <div class="panel-title-row">
+          <h2 class="panel-title">扫码录入</h2>
+          <span class="catalog-note">基础库：41 个条码 / 39 个标准品规</span>
+        </div>
+
+        <div class="scan-box">
+          <div class="input-wrap">
+            <input
+              id="barcodeInput"
+              class="barcode-input"
+              type="text"
+              inputmode="numeric"
+              maxlength="13"
+              autocomplete="off"
+              autofocus
+              aria-label="输入13位卷烟条码"
+              placeholder="扫描或输入13位卷烟条码"
+            />
+            <span id="digitCount" class="digit-count">0 / 13</span>
+          </div>
+          <button id="recognizeBtn" class="primary-btn" type="button">识别录入</button>
+        </div>
+
+        <div class="scan-hint">
+          <span>输入达到13位后自动识别；扫码枪回车同样可用。</span>
+          <span>仅保留数字，录入后自动清空并重新聚焦。</span>
+        </div>
+
+        <div id="statusMessage" class="status-message" role="status" aria-live="polite">
+          等待扫码……
+        </div>
+      </article>
+
+      <article class="panel match-card">
+        <div class="panel-title-row">
+          <h2 class="panel-title">最近识别</h2>
+          <span id="lastScanTime" class="catalog-note">暂无记录</span>
+        </div>
+
+        <div id="matchEmpty" class="match-empty">
+          扫描成功后，这里将显示标准品规、条码及价格信息。
+        </div>
+
+        <div id="matchContent" class="match-content">
+          <div id="matchName" class="match-name">—</div>
+          <div class="match-grid">
+            <div class="match-field"><span>品牌</span><strong id="matchBrand">—</strong></div>
+            <div class="match-field"><span>卷烟类型</span><strong id="matchType">—</strong></div>
+            <div class="match-field"><span>卷烟条码</span><strong id="matchBarcode">—</strong></div>
+            <div class="match-field"><span>条码后6位</span><strong id="matchTail6">—</strong></div>
+            <div class="match-field"><span>条支比</span><strong id="matchRatio">—</strong></div>
+            <div class="match-field"><span>零售价(200支)</span><strong id="matchPrice">—</strong></div>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="panel table-panel">
+      <div class="table-toolbar">
+        <div>
+          <h2 class="panel-title">品规数量统计</h2>
+          <div class="catalog-note" style="margin-top:6px">相同标准品规自动合并；兼容同名称对应多个条码。</div>
+        </div>
+        <div class="toolbar-actions">
+          <button id="exportSummaryBtn" class="ghost-btn" type="button">导出统计 CSV</button>
+          <button id="exportLogBtn" class="ghost-btn" type="button">导出扫码流水</button>
+          <button id="clearBtn" class="danger-btn" type="button">清空盘点</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>序号</th>
+              <th>品牌</th>
+              <th>卷烟名称（标准品规）</th>
+              <th>已扫描条码</th>
+              <th>条码后6位</th>
+              <th>类型</th>
+              <th>条支比</th>
+              <th>零售价(200支)</th>
+              <th>数量（条）</th>
+              <th>金额小计</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="inventoryBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>数据仅保存在浏览器 localStorage；更换设备或清除浏览器数据后不会自动同步。</span>
+      <span>页面为前端原型，可直接双击打开，无需服务器。</span>
+    </footer>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    "use strict";
+
+    const CIGARETTE_CATALOG = [{"brand":"黄山","barcode":"6901028088060","tail6":"088060","name":"黄山(红方印金细支)","type":"卷烟","ratio":200,"price":300.0},{"brand":"黄山","barcode":"6901028088794","tail6":"088794","name":"黄山(徽商新概念双中支)","type":"卷烟","ratio":200,"price":450.0},{"brand":"黄山","barcode":"6901028088824","tail6":"088824","name":"黄山(红方印新中支)","type":"卷烟","ratio":200,"price":300.0},{"brand":"黄山","barcode":"6901028088909","tail6":"088909","name":"黄山(徽商3mg)","type":"卷烟","ratio":200,"price":500.0},{"brand":"黄山","barcode":"6901028089692","tail6":"089692","name":"黄山(天高云淡细支)","type":"卷烟","ratio":200,"price":800.0},{"brand":"黄山","barcode":"6901028089722","tail6":"089722","name":"黄山(皖烟中支)","type":"卷烟","ratio":200,"price":350.0},{"brand":"黄山","barcode":"6901028089876","tail6":"089876","name":"黄山(天都中支)","type":"卷烟","ratio":200,"price":1000.0},{"brand":"黄山","barcode":"6901028089906","tail6":"089906","name":"黄山(软徽商)","type":"卷烟","ratio":200,"price":600.0},{"brand":"黄山","barcode":"6901028123266","tail6":"123266","name":"黄山(硬记忆)","type":"卷烟","ratio":200,"price":100.0},{"brand":"黄山","barcode":"6901028124058","tail6":"124058","name":"黄山(黑马细支)","type":"卷烟","ratio":200,"price":260.0},{"brand":"黄山","barcode":"6901028124966","tail6":"124966","name":"黄山(小红方印)","type":"卷烟","ratio":200,"price":220.0},{"brand":"黄山","barcode":"6901028125321","tail6":"125321","name":"黄山(中国画细支)","type":"卷烟","ratio":200,"price":150.0},{"brand":"黄山","barcode":"6901028125888","tail6":"125888","name":"黄山(徽商新视界细支)","type":"卷烟","ratio":200,"price":800.0},{"brand":"黄山","barcode":"6901028125970","tail6":"125970","name":"黄山(徽商新概念细支)","type":"卷烟","ratio":200,"price":400.0},{"brand":"黄山","barcode":"6901028126007","tail6":"126007","name":"黄山(新一品)","type":"卷烟","ratio":200,"price":80.0},{"brand":"黄山","barcode":"6901028126427","tail6":"126427","name":"黄山(七星皖烟)","type":"卷烟","ratio":200,"price":350.0},{"brand":"黄山","barcode":"6901028126441","tail6":"126441","name":"黄山(徽商新概念)","type":"卷烟","ratio":200,"price":400.0},{"brand":"黄山","barcode":"6901028129664","tail6":"129664","name":"黄山(大黄山)","type":"卷烟","ratio":200,"price":160.0},{"brand":"黄山","barcode":"6901028129756","tail6":"129756","name":"黄山(红方印金中支)","type":"卷烟","ratio":200,"price":400.0},{"brand":"黄山","barcode":"6901028131278","tail6":"131278","name":"黄山(硬)","type":"卷烟","ratio":200,"price":110.0},{"brand":"黄山","barcode":"6901028131605","tail6":"131605","name":"黄山(大红方印)","type":"卷烟","ratio":200,"price":320.0},{"brand":"黄山","barcode":"6901028131643","tail6":"131643","name":"黄山(小红方印)","type":"卷烟","ratio":200,"price":220.0},{"brand":"黄山","barcode":"6901028131728","tail6":"131728","name":"黄山(金皖细支)","type":"卷烟","ratio":200,"price":300.0},{"brand":"黄山","barcode":"6901028132046","tail6":"132046","name":"黄山(高山流水中支)","type":"卷烟","ratio":200,"price":600.0},{"brand":"黄山","barcode":"6901028132701","tail6":"132701","name":"黄山(软大壹品)","type":"卷烟","ratio":200,"price":80.0},{"brand":"黄山","barcode":"6901028208444","tail6":"208444","name":"黄山(硬记忆)","type":"卷烟","ratio":200,"price":100.0},{"brand":"黄山","barcode":"6901028208642","tail6":"208642","name":"黄山(风韵)","type":"卷烟","ratio":200,"price":200.0},{"brand":"黄山","barcode":"6901028208666","tail6":"208666","name":"黄山(硬天都)","type":"卷烟","ratio":200,"price":800.0},{"brand":"黄山","barcode":"6901028208819","tail6":"208819","name":"黄山(硬一品)","type":"卷烟","ratio":200,"price":60.0},{"brand":"黄山","barcode":"6901028208949","tail6":"208949","name":"黄山(红方印细支)","type":"卷烟","ratio":200,"price":200.0},{"brand":"黄山","barcode":"6901028223744","tail6":"223744","name":"黄山(记忆)","type":"卷烟","ratio":200,"price":140.0},{"brand":"黄山","barcode":"6901028223805","tail6":"223805","name":"黄山(天都)","type":"卷烟","ratio":160,"price":1000.0},{"brand":"黄山","barcode":"6901028223980","tail6":"223980","name":"黄山(印象一品)","type":"卷烟","ratio":200,"price":80.0},{"brand":"黄山","barcode":"6901028225014","tail6":"225014","name":"黄山(国宾迎客松)","type":"卷烟","ratio":200,"price":220.0},{"brand":"黄山","barcode":"6901028225052","tail6":"225052","name":"黄山(贵宾迎客松)","type":"卷烟","ratio":200,"price":130.0},{"brand":"黄山","barcode":"6901028225113","tail6":"225113","name":"黄山(金皖烟)","type":"卷烟","ratio":200,"price":280.0},{"brand":"黄山","barcode":"6901028225137","tail6":"225137","name":"黄山(红皖烟)","type":"卷烟","ratio":200,"price":190.0},{"brand":"黄山","barcode":"6901028225175","tail6":"225175","name":"黄山(新制皖烟)","type":"卷烟","ratio":200,"price":140.0},{"brand":"黄山","barcode":"6901028225199","tail6":"225199","name":"黄山(嘉宾迎客松)","type":"卷烟","ratio":200,"price":80.0},{"brand":"黄山","barcode":"6901028253284","tail6":"253284","name":"黄山(黄皖)","type":"卷烟","ratio":200,"price":200.0},{"brand":"黄山","barcode":"6901028253895","tail6":"253895","name":"黄山(经典皖烟细支)","type":"卷烟","ratio":200,"price":500.0}];
+    const STORAGE_KEY = "case-cigarette-inventory-v1";
+    const LOG_KEY = "case-cigarette-scan-log-v1";
+    const UNKNOWN_KEY = "case-cigarette-unknown-count-v1";
+
+    const catalogByBarcode = new Map(
+      CIGARETTE_CATALOG.map(item => [item.barcode, item])
+    );
+
+    let inventory = loadJson(STORAGE_KEY, []);
+    let scanLog = loadJson(LOG_KEY, []);
+    let unknownCount = Number(localStorage.getItem(UNKNOWN_KEY) || 0);
+    let processing = false;
+    let toastTimer = null;
+
+    const barcodeInput = document.getElementById("barcodeInput");
+    const digitCount = document.getElementById("digitCount");
+    const recognizeBtn = document.getElementById("recognizeBtn");
+    const statusMessage = document.getElementById("statusMessage");
+    const inventoryBody = document.getElementById("inventoryBody");
+    const totalQtyEl = document.getElementById("totalQty");
+    const specCountEl = document.getElementById("specCount");
+    const totalValueEl = document.getElementById("totalValue");
+    const unknownCountEl = document.getElementById("unknownCount");
+    const clearBtn = document.getElementById("clearBtn");
+    const exportSummaryBtn = document.getElementById("exportSummaryBtn");
+    const exportLogBtn = document.getElementById("exportLogBtn");
+    const toast = document.getElementById("toast");
+
+    barcodeInput.addEventListener("input", () => {
+      const cleaned = barcodeInput.value.replace(/\D/g, "").slice(0, 13);
+      barcodeInput.value = cleaned;
+      digitCount.textContent = `${cleaned.length} / 13`;
+      barcodeInput.classList.remove("error");
+
+      if (cleaned.length === 13 && !processing) {
+        processBarcode(cleaned);
+      }
+    });
+
+    barcodeInput.addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        recognizeCurrentInput();
+      }
+    });
+
+    recognizeBtn.addEventListener("click", recognizeCurrentInput);
+    clearBtn.addEventListener("click", clearInventory);
+    exportSummaryBtn.addEventListener("click", exportSummaryCsv);
+    exportLogBtn.addEventListener("click", exportLogCsv);
+
+    inventoryBody.addEventListener("click", event => {
+      const button = event.target.closest("button[data-action]");
+      if (!button) return;
+
+      const key = decodeURIComponent(button.dataset.key);
+      const action = button.dataset.action;
+
+      if (action === "increase") changeQuantity(key, 1);
+      if (action === "decrease") changeQuantity(key, -1);
+      if (action === "remove") removeItem(key);
+    });
+
+    inventoryBody.addEventListener("change", event => {
+      const input = event.target.closest("input[data-action='set-quantity']");
+      if (!input) return;
+
+      const key = decodeURIComponent(input.dataset.key);
+      const nextValue = Math.max(1, Math.floor(Number(input.value) || 1));
+      const row = inventory.find(item => item.key === key);
+      if (!row) return;
+
+      const previous = row.quantity;
+      row.quantity = nextValue;
+      row.updatedAt = new Date().toISOString();
+      appendLog({
+        status: "manual",
+        barcode: "",
+        name: row.name,
+        change: nextValue - previous,
+        quantityAfter: nextValue,
+        note: "手动设置数量"
+      });
+      persistAndRender();
+    });
+
+    function recognizeCurrentInput() {
+      const value = barcodeInput.value.trim();
+      if (value.length !== 13) {
+        barcodeInput.classList.add("error");
+        setStatus(`请输入完整的13位条码，当前为${value.length}位。`, "error");
+        barcodeInput.focus();
+        return;
+      }
+      processBarcode(value);
+    }
+
+    function processBarcode(barcode) {
+      if (processing) return;
+      processing = true;
+
+      const matched = catalogByBarcode.get(barcode);
+      const now = new Date();
+      const timestamp = now.toISOString();
+
+      if (!matched) {
+        unknownCount += 1;
+        localStorage.setItem(UNKNOWN_KEY, String(unknownCount));
+        appendLog({
+          status: "unknown",
+          barcode,
+          name: "未识别",
+          change: 0,
+          quantityAfter: "",
+          note: "基础品规库中不存在该条码"
+        });
+
+        showUnknown(barcode);
+        setStatus(`未找到条码 ${barcode} 对应的卷烟品规，请核对或补充基础数据。`, "error");
+        barcodeInput.classList.add("error");
+        render();
+        showToast("条码未识别");
+      } else {
+        // 以标准卷烟名称作为品规键：同名但条码不同的记录仍合并统计。
+        const key = matched.name;
+        let row = inventory.find(item => item.key === key);
+
+        if (row) {
+          row.quantity += 1;
+          row.updatedAt = timestamp;
+          if (!row.barcodes.includes(matched.barcode)) row.barcodes.push(matched.barcode);
+          if (!row.tail6List.includes(matched.tail6)) row.tail6List.push(matched.tail6);
+        } else {
+          row = {
+            key,
+            brand: matched.brand,
+            name: matched.name,
+            type: matched.type,
+            ratio: matched.ratio,
+            price: matched.price,
+            quantity: 1,
+            barcodes: [matched.barcode],
+            tail6List: [matched.tail6],
+            createdAt: timestamp,
+            updatedAt: timestamp
+          };
+          inventory.push(row);
+        }
+
+        appendLog({
+          status: "success",
+          barcode: matched.barcode,
+          name: matched.name,
+          change: 1,
+          quantityAfter: row.quantity,
+          note: "扫码录入"
+        });
+
+        showMatch(matched, now);
+        setStatus(`识别成功：${matched.name}，当前累计 ${row.quantity} 条。`, "success");
+        showToast(`${matched.name}  +1`);
+        persistAndRender();
+      }
+
+      window.setTimeout(() => {
+        barcodeInput.value = "";
+        digitCount.textContent = "0 / 13";
+        barcodeInput.classList.remove("error");
+        processing = false;
+        barcodeInput.focus();
+      }, 130);
+    }
+
+    function showMatch(item, date) {
+      document.getElementById("matchEmpty").style.display = "none";
+      document.getElementById("matchContent").classList.add("active");
+      document.getElementById("matchName").textContent = item.name;
+      document.getElementById("matchBrand").textContent = item.brand;
+      document.getElementById("matchType").textContent = item.type;
+      document.getElementById("matchBarcode").textContent = item.barcode;
+      document.getElementById("matchTail6").textContent = item.tail6;
+      document.getElementById("matchRatio").textContent = `${item.ratio} 支/条`;
+      document.getElementById("matchPrice").textContent = formatMoney(item.price);
+      document.getElementById("lastScanTime").textContent = formatDateTime(date);
+    }
+
+    function showUnknown(barcode) {
+      document.getElementById("matchEmpty").style.display = "none";
+      document.getElementById("matchContent").classList.add("active");
+      document.getElementById("matchName").textContent = "未识别条码";
+      document.getElementById("matchBrand").textContent = "—";
+      document.getElementById("matchType").textContent = "—";
+      document.getElementById("matchBarcode").textContent = barcode;
+      document.getElementById("matchTail6").textContent = barcode.slice(-6);
+      document.getElementById("matchRatio").textContent = "—";
+      document.getElementById("matchPrice").textContent = "—";
+      document.getElementById("lastScanTime").textContent = formatDateTime(new Date());
+    }
+
+    function changeQuantity(key, delta) {
+      const row = inventory.find(item => item.key === key);
+      if (!row) return;
+
+      const next = row.quantity + delta;
+      if (next <= 0) {
+        removeItem(key);
+        return;
+      }
+
+      row.quantity = next;
+      row.updatedAt = new Date().toISOString();
+      appendLog({
+        status: "manual",
+        barcode: "",
+        name: row.name,
+        change: delta,
+        quantityAfter: next,
+        note: delta > 0 ? "手动增加" : "手动减少"
+      });
+      persistAndRender();
+    }
+
+    function removeItem(key) {
+      const row = inventory.find(item => item.key === key);
+      if (!row) return;
+
+      const confirmed = window.confirm(`确认删除“${row.name}”的全部统计记录吗？`);
+      if (!confirmed) return;
+
+      inventory = inventory.filter(item => item.key !== key);
+      appendLog({
+        status: "manual",
+        barcode: "",
+        name: row.name,
+        change: -row.quantity,
+        quantityAfter: 0,
+        note: "删除品规统计"
+      });
+      persistAndRender();
+      showToast("已删除该品规");
+      barcodeInput.focus();
+    }
+
+    function clearInventory() {
+      if (inventory.length === 0 && scanLog.length === 0 && unknownCount === 0) {
+        showToast("当前没有可清空的数据");
+        barcodeInput.focus();
+        return;
+      }
+
+      const confirmed = window.confirm("确认清空全部盘点数量、扫码流水和未识别计数吗？此操作不可撤销。");
+      if (!confirmed) return;
+
+      inventory = [];
+      scanLog = [];
+      unknownCount = 0;
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(LOG_KEY);
+      localStorage.removeItem(UNKNOWN_KEY);
+
+      document.getElementById("matchContent").classList.remove("active");
+      document.getElementById("matchEmpty").style.display = "grid";
+      document.getElementById("lastScanTime").textContent = "暂无记录";
+      setStatus("盘点数据已清空，等待扫码……", "");
+      render();
+      showToast("盘点数据已清空");
+      barcodeInput.focus();
+    }
+
+    function appendLog(entry) {
+      scanLog.unshift({
+        time: new Date().toISOString(),
+        ...entry
+      });
+      scanLog = scanLog.slice(0, 2000);
+      localStorage.setItem(LOG_KEY, JSON.stringify(scanLog));
+    }
+
+    function persistAndRender() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(inventory));
+      localStorage.setItem(UNKNOWN_KEY, String(unknownCount));
+      render();
+    }
+
+    function render() {
+      inventory.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+
+      const totalQty = inventory.reduce((sum, item) => sum + item.quantity, 0);
+      const totalValue = inventory.reduce((sum, item) => sum + item.quantity * item.price, 0);
+
+      totalQtyEl.textContent = String(totalQty);
+      specCountEl.textContent = String(inventory.length);
+      totalValueEl.textContent = formatMoney(totalValue);
+      unknownCountEl.textContent = String(unknownCount);
+
+      if (inventory.length === 0) {
+        inventoryBody.innerHTML = `
+          <tr class="empty-row">
+            <td colspan="11">暂无盘点数据，请在上方扫描或输入13位卷烟条码。</td>
+          </tr>
+        `;
+        return;
+      }
+
+      inventoryBody.innerHTML = inventory.map((item, index) => {
+        const encodedKey = encodeURIComponent(item.key);
+        const barcodes = item.barcodes
+          .map(code => `<span class="barcode-tag">${escapeHtml(code)}</span>`)
+          .join("");
+        const tails = item.tail6List.map(escapeHtml).join("、");
+
+        return `
+          <tr>
+            <td>${index + 1}</td>
+            <td>${escapeHtml(item.brand)}</td>
+            <td class="name-cell">${escapeHtml(item.name)}</td>
+            <td><div class="barcode-list">${barcodes}</div></td>
+            <td>${tails}</td>
+            <td>${escapeHtml(item.type)}</td>
+            <td>${item.ratio}</td>
+            <td class="money">${formatMoney(item.price)}</td>
+            <td>
+              <div class="qty-control">
+                <button type="button" data-action="decrease" data-key="${encodedKey}" aria-label="数量减一">−</button>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value="${item.quantity}"
+                  data-action="set-quantity"
+                  data-key="${encodedKey}"
+                  aria-label="${escapeHtml(item.name)}数量"
+                />
+                <button type="button" data-action="increase" data-key="${encodedKey}" aria-label="数量加一">+</button>
+              </div>
+            </td>
+            <td class="money">${formatMoney(item.quantity * item.price)}</td>
+            <td>
+              <button class="icon-btn" type="button" data-action="remove" data-key="${encodedKey}" title="删除该品规">删除</button>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function exportSummaryCsv() {
+      if (inventory.length === 0) {
+        showToast("暂无统计数据可导出");
+        return;
+      }
+
+      const headers = [
+        "序号", "品牌", "卷烟名称", "卷烟类型", "已扫描条码", "条码后6位",
+        "条支比", "零售价(200支)", "数量(条)", "金额小计", "最后更新时间"
+      ];
+
+      const rows = inventory.map((item, index) => [
+        index + 1,
+        item.brand,
+        item.name,
+        item.type,
+        item.barcodes.join("|"),
+        item.tail6List.join("|"),
+        item.ratio,
+        item.price.toFixed(2),
+        item.quantity,
+        (item.quantity * item.price).toFixed(2),
+        formatDateTime(new Date(item.updatedAt))
+      ]);
+
+      downloadCsv(`卷烟品规统计_${fileTimestamp()}.csv`, [headers, ...rows]);
+      showToast("统计 CSV 已导出");
+    }
+
+    function exportLogCsv() {
+      if (scanLog.length === 0) {
+        showToast("暂无扫码流水可导出");
+        return;
+      }
+
+      const headers = ["时间", "状态", "卷烟条码", "标准品规", "数量变动", "变动后数量", "备注"];
+      const statusMap = { success: "识别成功", unknown: "未识别", manual: "手动调整" };
+
+      const rows = scanLog.map(item => [
+        formatDateTime(new Date(item.time)),
+        statusMap[item.status] || item.status,
+        item.barcode || "",
+        item.name || "",
+        item.change,
+        item.quantityAfter,
+        item.note || ""
+      ]);
+
+      downloadCsv(`卷烟扫码流水_${fileTimestamp()}.csv`, [headers, ...rows]);
+      showToast("扫码流水 CSV 已导出");
+    }
+
+    function downloadCsv(filename, rows) {
+      const csv = rows
+        .map(row => row.map(csvEscape).join(","))
+        .join("\r\n");
+
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function csvEscape(value) {
+      const text = String(value ?? "");
+      return `"${text.replace(/"/g, '""')}"`;
+    }
+
+    function setStatus(message, type) {
+      statusMessage.textContent = message;
+      statusMessage.className = "status-message";
+      if (type) statusMessage.classList.add(type);
+    }
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      window.clearTimeout(toastTimer);
+      toastTimer = window.setTimeout(() => toast.classList.remove("show"), 1800);
+    }
+
+    function formatMoney(value) {
+      return new Intl.NumberFormat("zh-CN", {
+        style: "currency",
+        currency: "CNY",
+        minimumFractionDigits: 2
+      }).format(Number(value) || 0);
+    }
+
+    function formatDateTime(date) {
+      return new Intl.DateTimeFormat("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+      }).format(date);
+    }
+
+    function fileTimestamp() {
+      const date = new Date();
+      const pad = n => String(n).padStart(2, "0");
+      return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+    }
+
+    function loadJson(key, fallback) {
+      try {
+        const value = localStorage.getItem(key);
+        return value ? JSON.parse(value) : fallback;
+      } catch (error) {
+        console.warn(`读取本地数据失败：${key}`, error);
+        return fallback;
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    render();
+    barcodeInput.focus();
+  </script>
+</body>
+</html>
