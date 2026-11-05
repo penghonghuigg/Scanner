@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import AppSidebar from '../components/AppSidebar.vue'
 import { useAuthStore } from '../stores/auth'
 
 const auth = useAuthStore()
@@ -8,7 +9,6 @@ const router = useRouter()
 const loggingOut = ref(false)
 const roleNames = { ADMIN: '系统管理员', OPERATOR: '业务操作员', VIEWER: '只读用户' }
 const roleName = computed(() => auth.user ? roleNames[auth.user.role] : '')
-const canManageUsers = computed(() => auth.user?.role === 'ADMIN')
 const canCreateSession = computed(() => auth.user?.role !== 'VIEWER')
 const branchLabel = computed(() => auth.user?.branch_name ?? '系统管理')
 
@@ -20,42 +20,7 @@ async function logout(): Promise<void> {
 
 <template>
   <div class="workspace-shell">
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <span class="sidebar-logo">案</span><span>涉案卷烟<br><small>智能统计系统</small></span>
-      </div>
-      <nav aria-label="主导航">
-        <RouterLink
-          class="nav-item active"
-          to="/"
-        >
-          <span>⌂</span>系统首页
-        </RouterLink>
-        <RouterLink
-          class="nav-item"
-          to="/scan-sessions"
-        >
-          <span>▤</span>扫描批次
-        </RouterLink>
-        <RouterLink
-          v-if="canManageUsers"
-          class="nav-item"
-          to="/users/register"
-        >
-          <span>＋</span>人员注册
-        </RouterLink>
-        <RouterLink
-          v-if="canManageUsers"
-          class="nav-item"
-          to="/products"
-        >
-          <span>▦</span>品规管理
-        </RouterLink>
-      </nav>
-      <div class="sidebar-version">
-        内部业务系统<br>Version 0.1.0
-      </div>
-    </aside>
+    <AppSidebar />
     <div class="workspace-main">
       <header class="topbar">
         <div><p>工作台</p><span>欢迎使用涉案卷烟智能统计系统</span></div>
@@ -86,14 +51,21 @@ async function logout(): Promise<void> {
             class="quick-primary"
             to="/scan-sessions/new"
           >
-            <span>＋</span><div><strong>新建扫描批次</strong><small>登记案件信息并进入扫码页</small></div><b>→</b>
+            <span>＋</span><div><strong>新建盘点作业</strong><small>登记案件信息并进入扫码页</small></div><b>→</b>
           </RouterLink>
           <RouterLink
             data-action="session-list"
             class="quick-secondary"
             to="/scan-sessions"
           >
-            <span>▤</span><div><strong>{{ canCreateSession ? '继续处理批次' : '查看扫描批次' }}</strong><small>查看权限范围内的进行中批次</small></div><b>→</b>
+            <span>▤</span><div><strong>{{ canCreateSession ? '继续盘点作业' : '查看盘点作业' }}</strong><small>查看权限范围内的进行中作业</small></div><b>→</b>
+          </RouterLink>
+          <RouterLink
+            data-action="result-list"
+            class="quick-secondary"
+            to="/scan-results"
+          >
+            <span>✓</span><div><strong>查看盘点结果</strong><small>查询和维护权限范围内的已完成结果</small></div><b>→</b>
           </RouterLink>
         </section>
         <section class="info-grid">
@@ -104,7 +76,7 @@ async function logout(): Promise<void> {
         <section class="notice-card">
           <div class="notice-icon">
             i
-          </div><div><h2>系统提示</h2><p>扫描批次建档功能已启用。创建批次后可进入空扫码工作区，编码识别与数量统计将在下一阶段开放。</p></div>
+          </div><div><h2>系统提示</h2><p>进行中的登记请从“盘点作业”继续；已经结束的记录请从“盘点结果”查看和导出。</p></div>
         </section>
       </main>
     </div>

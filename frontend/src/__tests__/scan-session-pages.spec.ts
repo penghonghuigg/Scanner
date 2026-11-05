@@ -5,9 +5,18 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 const apiMocks = vi.hoisted(() => ({
+  adjustCartonQuantity: vi.fn(),
+  completeScanSession: vi.fn(),
+  downloadScanSessionExport: vi.fn(),
+  getRegionCatalog: vi.fn(),
+  getIntegrationSnapshot: vi.fn(),
   listScanSessions: vi.fn(),
   getScanSession: vi.fn(),
   getScanState: vi.fn(),
+  getSourceAllocations: vi.fn(),
+  listScanEvents: vi.fn(),
+  removeScanSessionItem: vi.fn(),
+  replaceSourceAllocations: vi.fn(),
   scanCode: vi.fn(),
   resolveAmbiguity: vi.fn(),
 }))
@@ -53,6 +62,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   apiMocks.listScanSessions.mockResolvedValue({ items: [fixture], total: 1, page: 1, page_size: 20 })
   apiMocks.getScanSession.mockResolvedValue({ scan_session: fixture })
+  apiMocks.getRegionCatalog.mockResolvedValue({ source_types: [], provinces: [] })
+  apiMocks.getSourceAllocations.mockResolvedValue({ items: [] })
+  apiMocks.getIntegrationSnapshot.mockResolvedValue({ snapshot: null })
+  apiMocks.listScanEvents.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 10 })
   apiMocks.getScanState.mockResolvedValue({
     summary: {
       product_count: 0, carton_count: 0, pack_count: 0,
@@ -68,7 +81,9 @@ test('批次列表显示固定标识、状态和案件摘要', async () => {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/', component: { template: '<div />' } },
       { path: '/scan-sessions', component: ScanSessionListView },
+      { path: '/scan-results', component: { template: '<div />' } },
       { path: '/scan-sessions/new', component: { template: '<div />' } },
       { path: '/scan-sessions/:id/scan', component: { template: '<div />' } },
     ],
@@ -92,7 +107,9 @@ test('批次列表支持关键词回车查询、重置和接口总数', async ()
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/', component: { template: '<div />' } },
       { path: '/scan-sessions', component: ScanSessionListView },
+      { path: '/scan-results', component: { template: '<div />' } },
       { path: '/scan-sessions/new', component: { template: '<div />' } },
       { path: '/scan-sessions/:id/scan', component: { template: '<div />' } },
     ],
@@ -117,6 +134,45 @@ test('批次列表支持关键词回车查询、重置和接口总数', async ()
   expect(apiMocks.listScanSessions).toHaveBeenLastCalledWith({
     status: 'DRAFT', page: 1, page_size: 20,
   })
+})
+
+test('盘点结果入口只查询已完成批次并进入结果详情', async () => {
+  activateUser()
+  apiMocks.listScanSessions.mockResolvedValue({
+    items: [{ ...fixture, status: 'COMPLETED', status_name: '已完成' }],
+    total: 1,
+    page: 1,
+    page_size: 20,
+  })
+  const { default: ScanSessionListView } = await import('../views/ScanSessionListView.vue')
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { template: '<div />' } },
+      { path: '/scan-sessions', component: { template: '<div />' } },
+      { path: '/scan-sessions/new', component: { template: '<div />' } },
+      {
+        path: '/scan-results',
+        name: 'scan-result-list',
+        component: ScanSessionListView,
+        meta: { sessionStatus: 'COMPLETED' },
+      },
+      { path: '/scan-results/:id', name: 'scan-result-detail', component: { template: '<div />' } },
+    ],
+  })
+  await router.push('/scan-results')
+  await router.isReady()
+  const wrapper = mount(ScanSessionListView, { global: { plugins: [router] } })
+  await flushPromises()
+
+  expect(apiMocks.listScanSessions).toHaveBeenCalledWith({
+    status: 'COMPLETED', page: 1, page_size: 20,
+  })
+  expect(wrapper.get('h1').text()).toBe('盘点结果')
+  expect(wrapper.find('a[href="/scan-sessions/new"]').exists()).toBe(false)
+  await wrapper.get('.session-row').trigger('click')
+  await flushPromises()
+  expect(router.currentRoute.value.fullPath).toBe('/scan-results/8')
 })
 
 test('扫码页加载批次详情和持久化扫码状态', async () => {
@@ -150,12 +206,13 @@ test('工作台为操作员提供快捷新建，查看员只提供批次查看',
   const operatorWrapper = mount(HomeView, {
     global: { plugins: [router], stubs: { RouterLink: { template: '<a :href="to"><slot /></a>', props: ['to'] } } },
   })
-  expect(operatorWrapper.get('[data-action="new-session"]').text()).toContain('新建扫描批次')
+  expect(operatorWrapper.get('[data-action="new-session"]').text()).toContain('新建盘点作业')
+  expect(operatorWrapper.get('[data-action="result-list"]').text()).toContain('查看盘点结果')
 
   activateUser('VIEWER')
   const viewerWrapper = mount(HomeView, {
     global: { plugins: [router], stubs: { RouterLink: { template: '<a :href="to"><slot /></a>', props: ['to'] } } },
   })
   expect(viewerWrapper.find('[data-action="new-session"]').exists()).toBe(false)
-  expect(viewerWrapper.get('[data-action="session-list"]').text()).toContain('查看扫描批次')
+  expect(viewerWrapper.get('[data-action="session-list"]').text()).toContain('查看盘点作业')
 })

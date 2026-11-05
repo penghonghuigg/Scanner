@@ -14,6 +14,8 @@ from app.core.security import hash_password
 from app.db.schema import initialize_database
 from app.models.auth import User, UserSession
 from app.models.catalog import CigaretteProduct
+from app.models.finalization import ExportRecord, ScanItemSourceAllocation
+from app.models.integration import IntegrationSnapshot
 from app.models.scanning import ScanEvent, ScanSession, ScanSessionItem
 from app.schemas.auth import AuthUser
 
@@ -44,10 +46,13 @@ def prepare_database() -> tuple[AuthUser, AuthUser]:
     engine = create_engine(database_url_for_test())
     now = datetime.now(UTC).replace(tzinfo=None)
     with Session(engine) as session, session.begin():
+        session.execute(delete(ExportRecord))
+        session.execute(delete(ScanItemSourceAllocation))
         session.execute(delete(ScanEvent).where(ScanEvent.source_event_id.is_not(None)))
         session.execute(delete(ScanEvent))
         session.execute(delete(ScanSessionItem))
         session.execute(delete(UserSession))
+        session.execute(delete(IntegrationSnapshot))
         session.execute(delete(ScanSession))
         session.execute(delete(CigaretteProduct))
         session.execute(delete(User))
@@ -103,14 +108,15 @@ def add_product(
     return product
 
 
-def test_scan_code_requires_exactly_thirteen_digits() -> None:
+def test_scan_code_accepts_six_to_sixty_four_digits() -> None:
     from app.scanning.scan_service import BarcodeInvalidError, normalize_scan_code
 
+    assert normalize_scan_code("690001") == "690001"
     assert normalize_scan_code("6900000000101") == "6900000000101"
+    assert normalize_scan_code("1" * 64) == "1" * 64
     for invalid_code in (
-        "690000000101",
-        "69000000000101",
-        "69000000000000101",
+        "69000",
+        "1" * 65,
         "69000000001A1",
     ):
         with pytest.raises(BarcodeInvalidError):
@@ -478,4 +484,518 @@ def test_scan_state_returns_authoritative_totals_recent_events_and_pending_items
         assert state["recent_events"][0]["event_type"] == "RESOLVE"
         assert state["recent_events"][0]["operator_name"] == "凤台人员"
         assert state["pending_ambiguities"] == []
+    engine.dispose()
+
+
+def test_scan_state_returns_catalog_summary_and_latest_success() -> None:
+    from app.scanning.scan_service import get_scan_state, scan_code
+
+    _, operator = prepare_database()
+    engine = create_engine(database_url_for_test())
+    with Session(engine) as session:
+        first = add_product(
+            session,
+            carton_code="6900000000061",
+            pack_code="6900000000069",
+            name="同名品规",
+        )
+        add_product(
+            session,
+            carton_code="6900000000062",
+            pack_code="6900000000069",
+            name="同名品规",
+        )
+        add_product(
+            session,
+            carton_code="6900000000063",
+            pack_code=None,
+            name="其他品规",
+        )
+        add_product(
+            session,
+            carton_code="6900000000064",
+            pack_code="6900000000065",
+            name="停用品规",
+            is_active=False,
+        )
+        session.commit()
+        batch = create_batch(session, operator)
+        successful = scan_code(
+            session,
+            operator,
+            batch.id,
+            "00000000-0000-4000-8000-000000000061",
+            first.carton_code,
+        )
+        scan_code(
+            session,
+            operator,
+            batch.id,
+            "00000000-0000-4000-8000-000000000062",
+            "6999999999998",
+        )
+        scan_code(
+            session,
+            operator,
+            batch.id,
+            "00000000-0000-4000-8000-000000000063",
+            "6900000000069",
+        )
+
+        state = get_scan_state(session, operator, batch.id)
+
+        assert state["catalog_summary"] == {
+            "active_code_count": 4,
+            "active_standard_product_count": 2,
+        }
+        assert state["latest_successful_event"]["id"] == successful.event.id
+        assert state["latest_successful_event"]["raw_code"] == first.carton_code
+        assert state["latest_successful_event"]["reason"] is None
+    engine.dispose()
+
+
+def test_adjust_carton_quantity_updates_manual_sticks_and_is_idempotent() -> None:
+    from app.scanning.scan_service import (
+        IdempotencyConflictError,
+        NegativeQuantityError,
+        QuantityAdjustmentInvalidError,
+        ScanSessionItemNotFoundError,
+        adjust_carton_quantity,
+        scan_code,
+    )
+
+    _, operator = prepare_database()
+    engine = create_engine(database_url_for_test())
+    with Session(engine) as session:
+        product = add_product(
+            session,
+            carton_code="6900000000071",
+            pack_code="6900000000072",
+            name="人工调整品规",
+        )
+        session.commit()
+        batch = create_batch(session, operator)
+        for request_id, code in (
+            ("00000000-0000-4000-8000-000000000071", product.carton_code),
+            ("00000000-0000-4000-8000-000000000072", product.carton_code),
+            ("00000000-0000-4000-8000-000000000073", product.pack_code),
+        ):
+            scan_code(session, operator, batch.id, request_id, code)
+        item = session.scalar(select(ScanSessionItem))
+        assert item is not None
+
+        increased = adjust_carton_quantity(
+            session,
+            operator,
+            batch.id,
+            product.id,
+            "00000000-0000-4000-8000-000000000074",
+            "DELTA",
+            Decimal("0.1"),
+        )
+        session.refresh(item)
+        assert (item.carton_count, item.pack_count) == (2, 1)
+        assert (item.manual_delta_sticks, item.total_sticks) == (20, 440)
+        assert increased.event.delta_sticks == 20
+        assert increased.event.reason == (
+            "人工调整条数：增加 0.1 条（1 包）；原因：现场核对修正"
+        )
+
+        set_result = adjust_carton_quantity(
+            session,
+            operator,
+            batch.id,
+            product.id,
+            "00000000-0000-4000-8000-000000000075",
+            "SET",
+            Decimal("1.5"),
+        )
+        replay = adjust_carton_quantity(
+            session,
+            operator,
+            batch.id,
+            product.id,
+            "00000000-0000-4000-8000-000000000075",
+            "SET",
+            Decimal("1.5"),
+        )
+        session.refresh(item)
+        assert item.pack_count == 1
+        assert (item.manual_delta_sticks, item.total_sticks) == (-120, 300)
+        assert set_result.event.reason == (
+            "人工调整条数：设为 1.5 条；原因：现场核对修正"
+        )
+        assert replay.event.id == set_result.event.id
+        assert replay.idempotent_replay is True
+
+        with pytest.raises(IdempotencyConflictError):
+            adjust_carton_quantity(
+                session,
+                operator,
+                batch.id,
+                product.id,
+                "00000000-0000-4000-8000-000000000075",
+                "DELTA",
+                Decimal("-0.1"),
+            )
+        with pytest.raises(QuantityAdjustmentInvalidError):
+            adjust_carton_quantity(
+                session,
+                operator,
+                batch.id,
+                product.id,
+                "00000000-0000-4000-8000-000000000076",
+                "DELTA",
+                0,
+            )
+        with pytest.raises(QuantityAdjustmentInvalidError):
+            adjust_carton_quantity(
+                session,
+                operator,
+                batch.id,
+                product.id,
+                "00000000-0000-4000-8000-000000000176",
+                "SET",
+                Decimal("0.15"),
+            )
+        adjust_carton_quantity(
+            session,
+            operator,
+            batch.id,
+            product.id,
+            "00000000-0000-4000-8000-000000000077",
+            "SET",
+            0,
+        )
+        with pytest.raises(NegativeQuantityError):
+            adjust_carton_quantity(
+                session,
+                operator,
+                batch.id,
+                product.id,
+                "00000000-0000-4000-8000-000000000078",
+                "DELTA",
+                Decimal("-0.1"),
+            )
+        with pytest.raises(ScanSessionItemNotFoundError):
+            adjust_carton_quantity(
+                session,
+                operator,
+                batch.id,
+                product.id + 999,
+                "00000000-0000-4000-8000-000000000079",
+                "SET",
+                0,
+            )
+    engine.dispose()
+
+
+def test_adjustment_records_other_reason_and_sets_the_final_pack_aligned_total() -> None:
+    from app.scanning.scan_service import adjust_carton_quantity, scan_code
+
+    _, operator = prepare_database()
+    engine = create_engine(database_url_for_test())
+    with Session(engine) as session:
+        product = add_product(
+            session,
+            carton_code="6900000000171",
+            pack_code="6900000000172",
+            name="带原因调整品规",
+        )
+        session.commit()
+        batch = create_batch(session, operator)
+        scan_code(
+            session,
+            operator,
+            batch.id,
+            "00000000-0000-4000-8000-000000000171",
+            product.carton_code,
+        )
+        scan_code(
+            session,
+            operator,
+            batch.id,
+            "00000000-0000-4000-8000-000000000172",
+            product.pack_code,
+        )
+
+        result = adjust_carton_quantity(
+            session,
+            operator,
+            batch.id,
+            product.id,
+            "00000000-0000-4000-8000-000000000173",
+            "SET",
+            Decimal("1.5"),
+            reason_type="OTHER",
+            reason_note="包装破损复核",
+        )
+        item = session.scalar(select(ScanSessionItem))
+        assert item is not None
+        assert item.total_sticks == 300
+        assert item.manual_delta_sticks == 80
+        assert result.event.reason == (
+            "人工调整条数：设为 1.5 条；原因：其他：包装破损复核"
+        )
+    engine.dispose()
+
+
+def test_concurrent_carton_deltas_do_not_lose_counts() -> None:
+    from app.scanning.scan_service import adjust_carton_quantity, scan_code
+
+    _, operator = prepare_database()
+    engine = create_engine(database_url_for_test(), pool_size=6)
+    with Session(engine) as session:
+        product = add_product(
+            session,
+            carton_code="6900000000081",
+            pack_code=None,
+            name="并发调整品规",
+        )
+        session.commit()
+        batch = create_batch(session, operator)
+        scan_code(
+            session,
+            operator,
+            batch.id,
+            "00000000-0000-4000-8000-000000000081",
+            product.carton_code,
+        )
+        batch_id = batch.id
+        product_id = product.id
+
+    worker_count = 4
+    barrier = Barrier(worker_count)
+
+    def adjust_once(worker: int) -> int:
+        with Session(engine) as worker_session:
+            barrier.wait()
+            result = adjust_carton_quantity(
+                worker_session,
+                operator,
+                batch_id,
+                product_id,
+                f"00000000-0000-4000-8000-{worker:012d}",
+                "DELTA",
+                Decimal("0.1"),
+            )
+            return result.event.id
+
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        event_ids = list(executor.map(adjust_once, range(401, 401 + worker_count)))
+
+    with Session(engine) as session:
+        item = session.scalar(select(ScanSessionItem))
+        assert item is not None
+        assert (item.carton_count, item.manual_delta_sticks, item.total_sticks) == (
+            1,
+            80,
+            280,
+        )
+        assert session.scalar(select(func.count(ScanEvent.id))) == 5
+        assert len(set(event_ids)) == worker_count
+    engine.dispose()
+
+
+def test_scan_event_page_returns_ten_rows_in_descending_order() -> None:
+    from app.scanning.scan_service import (
+        adjust_carton_quantity,
+        list_scan_events,
+        scan_code,
+    )
+
+    _, operator = prepare_database()
+    engine = create_engine(database_url_for_test())
+    with Session(engine) as session:
+        product = add_product(
+            session,
+            carton_code="6900000000091",
+            pack_code=None,
+            name="流水分页品规",
+        )
+        session.commit()
+        batch = create_batch(session, operator)
+        for index in range(21):
+            scan_code(
+                session,
+                operator,
+                batch.id,
+                f"00000000-0000-4000-8000-{500 + index:012d}",
+                f"6999999{index:06d}",
+            )
+        scan_code(
+            session,
+            operator,
+            batch.id,
+            "00000000-0000-4000-8000-000000000521",
+            product.carton_code,
+        )
+        adjust_carton_quantity(
+            session,
+            operator,
+            batch.id,
+            product.id,
+            "00000000-0000-4000-8000-000000000522",
+            "DELTA",
+            Decimal("0.1"),
+        )
+
+        page_one = list_scan_events(session, operator, batch.id, page=1, page_size=10)
+        page_three = list_scan_events(session, operator, batch.id, page=3, page_size=10)
+
+        assert (page_one.total, len(page_one.items)) == (23, 10)
+        assert len(page_three.items) == 3
+        assert page_one.items[0]["event_type"] == "ADJUST"
+        assert page_one.items[0]["reason"] == (
+            "人工调整条数：增加 0.1 条（1 包）；原因：现场核对修正"
+        )
+        assert page_one.items[0]["created_at"] >= page_one.items[-1]["created_at"]
+    engine.dispose()
+
+
+def test_remove_session_item_preserves_audit_replays_and_allows_rescan() -> None:
+    from app.scanning.scan_service import (
+        IdempotencyConflictError,
+        ScanSessionItemNotFoundError,
+        remove_session_item,
+        scan_code,
+    )
+
+    _, operator = prepare_database()
+    engine = create_engine(database_url_for_test())
+    with Session(engine) as session:
+        product = add_product(
+            session,
+            carton_code="6900000000111",
+            pack_code="6900000000112",
+            name="删除后重扫品规",
+        )
+        session.commit()
+        batch = create_batch(session, operator)
+        scan_code(
+            session,
+            operator,
+            batch.id,
+            "00000000-0000-4000-8000-000000000811",
+            product.carton_code,
+        )
+        scan_code(
+            session,
+            operator,
+            batch.id,
+            "00000000-0000-4000-8000-000000000812",
+            product.pack_code,
+        )
+
+        request_id = "00000000-0000-4000-8000-000000000813"
+        removed = remove_session_item(
+            session,
+            operator,
+            batch.id,
+            product.id,
+            request_id,
+        )
+
+        assert session.scalar(select(ScanSessionItem)) is None
+        assert removed.idempotent_replay is False
+        assert removed.event.event_type == "ADJUST"
+        assert removed.event.result == "SUCCESS"
+        assert removed.event.unit_type == "STICK"
+        assert removed.event.delta_sticks == -220
+        assert removed.event.reason == "删除品规统计：数量归零并隐藏"
+        assert removed.event.product_snapshot["standard_name"] == "删除后重扫品规"
+        assert session.scalar(select(func.count(ScanEvent.id))) == 3
+
+        replay = remove_session_item(
+            session,
+            operator,
+            batch.id,
+            product.id,
+            request_id,
+        )
+        assert replay.idempotent_replay is True
+        assert replay.event.id == removed.event.id
+        assert session.scalar(select(func.count(ScanEvent.id))) == 3
+
+        with pytest.raises(ScanSessionItemNotFoundError):
+            remove_session_item(
+                session,
+                operator,
+                batch.id,
+                product.id,
+                "00000000-0000-4000-8000-000000000814",
+            )
+        with pytest.raises(IdempotencyConflictError):
+            remove_session_item(
+                session,
+                operator,
+                batch.id,
+                product.id + 1,
+                request_id,
+            )
+
+        scan_code(
+            session,
+            operator,
+            batch.id,
+            "00000000-0000-4000-8000-000000000815",
+            product.carton_code,
+        )
+        recreated = session.scalar(select(ScanSessionItem))
+        assert recreated is not None
+        assert (recreated.carton_count, recreated.pack_count, recreated.total_sticks) == (
+            1,
+            0,
+            200,
+        )
+    engine.dispose()
+
+
+def test_concurrent_remove_with_same_request_only_appends_one_event() -> None:
+    from app.scanning.scan_service import remove_session_item, scan_code
+
+    _, operator = prepare_database()
+    engine = create_engine(database_url_for_test(), pool_size=4)
+    with Session(engine) as session:
+        product = add_product(
+            session,
+            carton_code="6900000000121",
+            pack_code=None,
+            name="并发删除品规",
+        )
+        session.commit()
+        batch = create_batch(session, operator)
+        scan_code(
+            session,
+            operator,
+            batch.id,
+            "00000000-0000-4000-8000-000000000821",
+            product.carton_code,
+        )
+        batch_id = batch.id
+        product_id = product.id
+
+    barrier = Barrier(2)
+    request_id = "00000000-0000-4000-8000-000000000822"
+
+    def remove_once() -> tuple[int, bool]:
+        with Session(engine) as worker_session:
+            barrier.wait()
+            result = remove_session_item(
+                worker_session,
+                operator,
+                batch_id,
+                product_id,
+                request_id,
+            )
+            return result.event.id, result.idempotent_replay
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: remove_once(), range(2)))
+
+    with Session(engine) as session:
+        assert session.scalar(select(ScanSessionItem)) is None
+        assert session.scalar(select(func.count(ScanEvent.id))) == 2
+        assert len({event_id for event_id, _ in results}) == 1
+        assert sorted(replayed for _, replayed in results) == [False, True]
     engine.dispose()

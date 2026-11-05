@@ -1,5 +1,6 @@
 /.codex/
 /.env
+/.env.production
 /.worktrees/
 /backend/.venv/
 /frontend/node_modules/
@@ -15,3 +16,6 @@
 /backups/
 /exports/
 /logs/
+/deploy/runtime/
+/deploy/import/
+*.sql.gz

@@ -1,0 +1,91 @@
+services:
+  scanner-mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?MYSQL_DATABASE is required}
+      MYSQL_USER: ${MYSQL_USER:?MYSQL_USER is required}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    volumes:
+      - scanner_mysql_data:/var/lib/mysql
+    networks:
+      - scanner_internal
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h 127.0.0.1 -u root --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    mem_limit: 512m
+    logging: &scanner_logging
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  scanner-api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: scanner-api:${SCANNER_VERSION:-local}
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:?APP_ENV is required}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      COOKIE_SECURE: ${COOKIE_SECURE:?COOKIE_SECURE is required}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-8}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
+      JIANDAOYUN_CREATE_URL: ${JIANDAOYUN_CREATE_URL:-}
+      JIANDAOYUN_APP_ID: ${JIANDAOYUN_APP_ID:-}
+      JIANDAOYUN_ENTRY_ID: ${JIANDAOYUN_ENTRY_ID:-}
+      JIANDAOYUN_API_KEY: ${JIANDAOYUN_API_KEY:-}
+    depends_on:
+      scanner-mysql:
+        condition: service_healthy
+    networks:
+      - scanner_internal
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+    mem_limit: 384m
+    logging: *scanner_logging
+
+  scanner-web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: scanner-web:${SCANNER_VERSION:-local}
+    restart: unless-stopped
+    depends_on:
+      scanner-api:
+        condition: service_healthy
+    networks:
+      - scanner_internal
+      - scanner_proxy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1/healthz | grep -q '^ok$'"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    logging: *scanner_logging
+
+networks:
+  scanner_internal:
+    internal: true
+  scanner_proxy:
+    external: true
+    name: scanner_proxy
+
+volumes:
+  scanner_mysql_data:
+    name: scanner_mysql_data

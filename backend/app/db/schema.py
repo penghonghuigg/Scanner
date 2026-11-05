@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from sqlalchemy import Engine, create_engine, inspect, text
 
 from app.db.base import Base
-from app.models import auth, catalog, scanning  # noqa: F401
+from app.models import auth, catalog, finalization, integration, scanning  # noqa: F401
 
 
 class SchemaMismatchError(RuntimeError):

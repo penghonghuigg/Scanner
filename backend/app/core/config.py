@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     session_ttl_hours: int = Field(default=8, ge=1, le=24)
     allowed_origins: str = "http://localhost:8080"
+    jiandaoyun_create_url: str = ""
+    jiandaoyun_app_id: str = ""
+    jiandaoyun_entry_id: str = ""
+    jiandaoyun_api_key: str = ""
 
     @model_validator(mode="after")
     def require_secure_production_cookie(self) -> "Settings":

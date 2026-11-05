@@ -22,6 +22,9 @@ def reset_test_schema() -> None:
     with engine.begin() as connection:
         connection.execute(text("SET FOREIGN_KEY_CHECKS=0"))
         for table in (
+            "integration_snapshots",
+            "export_records",
+            "scan_item_source_allocations",
             "scan_events",
             "scan_session_items",
             "scan_sessions",
@@ -58,6 +61,9 @@ def test_init_db_creates_current_tables_and_is_idempotent() -> None:
         "scan_sessions",
         "scan_events",
         "scan_session_items",
+        "scan_item_source_allocations",
+        "export_records",
+        "integration_snapshots",
     }
     user_columns = {column["name"] for column in inspect(engine).get_columns("users")}
     user_indexes = {index["name"] for index in inspect(engine).get_indexes("users")}

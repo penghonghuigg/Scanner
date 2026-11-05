@@ -39,6 +39,12 @@ class ProductListResult:
     ambiguous_count: int
 
 
+@dataclass(frozen=True)
+class ProductOptionListResult:
+    items: list[CigaretteProduct]
+    total: int
+
+
 def calculate_pack_price(
     carton_retail_price: Decimal | None,
     packs_per_carton: int,
@@ -243,6 +249,37 @@ def search_filter(query: str):
         CigaretteProduct.carton_code.like(pattern),
         CigaretteProduct.pack_code.like(pattern),
     )
+
+
+def list_active_product_options(
+    session: Session,
+    *,
+    query: str,
+    page: int = 1,
+    page_size: int = 20,
+) -> ProductOptionListResult:
+    normalized = query.strip()
+    if not normalized:
+        return ProductOptionListResult(items=[], total=0)
+    pattern = f"%{normalized}%"
+    filters = (
+        CigaretteProduct.is_active.is_(True),
+        or_(
+            CigaretteProduct.standard_name.like(pattern),
+            CigaretteProduct.carton_code.like(pattern),
+        ),
+    )
+    total = session.scalar(select(func.count(CigaretteProduct.id)).where(*filters)) or 0
+    items = list(
+        session.scalars(
+            select(CigaretteProduct)
+            .where(*filters)
+            .order_by(CigaretteProduct.standard_name, CigaretteProduct.id)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    )
+    return ProductOptionListResult(items=items, total=int(total))
 
 
 def list_products(

@@ -36,13 +36,25 @@ export const router = createRouter({
       path: '/scan-sessions',
       name: 'scan-session-list',
       component: ScanSessionListView,
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, sessionStatus: 'DRAFT' },
     },
     {
       path: '/scan-sessions/:id/scan',
       name: 'scan-workspace',
       component: ScanWorkspaceView,
       meta: { requiresAuth: true },
+    },
+    {
+      path: '/scan-results',
+      name: 'scan-result-list',
+      component: ScanSessionListView,
+      meta: { requiresAuth: true, sessionStatus: 'COMPLETED' },
+    },
+    {
+      path: '/scan-results/:id',
+      name: 'scan-result-detail',
+      component: ScanWorkspaceView,
+      meta: { requiresAuth: true, sessionStatus: 'COMPLETED' },
     },
   ],
 })

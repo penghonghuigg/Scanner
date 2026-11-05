@@ -1,7 +1,9 @@
 from datetime import datetime
+from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class CreateScanSessionRequest(BaseModel):
@@ -51,7 +53,7 @@ class ScanCodeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request_id: UUID
-    code: str = Field(min_length=13, max_length=13, pattern=r"^\d{13}$")
+    code: str = Field(min_length=6, max_length=64, pattern=r"^\d{6,64}$")
 
 
 class ResolveAmbiguityRequest(BaseModel):
@@ -60,6 +62,33 @@ class ResolveAmbiguityRequest(BaseModel):
     request_id: UUID
     event_id: int = Field(gt=0)
     product_id: int = Field(gt=0)
+
+
+class AdjustCartonQuantityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: UUID
+    operation: Literal["DELTA", "SET"]
+    quantity: Decimal = Field(multiple_of=Decimal("0.1"))
+    reason_type: Literal[
+        "ONSITE_VERIFICATION",
+        "SCAN_CORRECTION",
+        "LOOSE_PACK_VERIFICATION",
+        "OTHER",
+    ]
+    reason_note: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_other_reason_note(self) -> "AdjustCartonQuantityRequest":
+        if self.reason_type == "OTHER" and not (self.reason_note or "").strip():
+            raise ValueError("选择其他时必须填写具体调整原因")
+        return self
+
+
+class RemoveScanSessionItemRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: UUID
 
 
 class ProductSnapshotResponse(BaseModel):
@@ -94,6 +123,7 @@ class ScanEventResponse(BaseModel):
     product_id: int | None
     unit_type: str | None
     delta_sticks: int
+    reason: str | None
     source_event_id: int | None
     candidate_snapshot: list[ProductSnapshotResponse] | None
     product_snapshot: ProductSnapshotResponse | None
@@ -112,11 +142,25 @@ class ScanSummaryResponse(BaseModel):
     ambiguous_count: int
 
 
+class CatalogSummaryResponse(BaseModel):
+    active_code_count: int
+    active_standard_product_count: int
+
+
 class ScanStateResponse(BaseModel):
     summary: ScanSummaryResponse
     items: list[ScanSessionItemResponse]
     recent_events: list[ScanEventResponse]
     pending_ambiguities: list[ScanEventResponse]
+    catalog_summary: CatalogSummaryResponse
+    latest_successful_event: ScanEventResponse | None
+
+
+class ScanEventListPayload(BaseModel):
+    items: list[ScanEventResponse]
+    total: int
+    page: int
+    page_size: int
 
 
 class ScanOperationResponse(BaseModel):

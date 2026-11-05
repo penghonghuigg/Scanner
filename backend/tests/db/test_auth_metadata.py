@@ -4,7 +4,7 @@ from app.db.base import Base
 from app.models import auth  # noqa: F401
 
 
-def test_metadata_contains_tables_through_stage_five() -> None:
+def test_metadata_contains_tables_through_stage_eight() -> None:
     assert set(Base.metadata.tables) == {
         "users",
         "user_sessions",
@@ -12,6 +12,9 @@ def test_metadata_contains_tables_through_stage_five() -> None:
         "scan_sessions",
         "scan_events",
         "scan_session_items",
+        "scan_item_source_allocations",
+        "export_records",
+        "integration_snapshots",
     }
 
 

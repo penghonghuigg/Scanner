@@ -26,6 +26,7 @@ async function testRouter() {
       { path: '/users/register', component: UserRegisterView },
       { path: '/products', component: { template: '<div>品规管理</div>' } },
       { path: '/scan-sessions', component: { template: '<div>扫描批次</div>' } },
+      { path: '/scan-results', component: { template: '<div>盘点结果</div>' } },
       { path: '/scan-sessions/new', component: { template: '<div>新建扫描批次</div>' } },
       { path: '/login', component: { template: '<div>登录</div>' } },
     ],
@@ -73,4 +74,17 @@ test('管理员工作台显示注册入口而操作员不显示', async () => {
   expect(operatorView.find('a[href="/users/register"]').exists()).toBe(false)
   expect(operatorView.find('a[href="/products"]').exists()).toBe(false)
   expect(operatorView.text()).toContain('潘集分局')
+})
+
+test('管理员进入人员注册后盘点作业和盘点结果菜单仍然可见', async () => {
+  const auth = useAuthStore()
+  auth.user = adminUser()
+  const wrapper = mount(UserRegisterView, {
+    global: { plugins: [await testRouter()] },
+  })
+
+  expect(wrapper.get('a[href="/scan-sessions"]').text()).toContain('盘点作业')
+  expect(wrapper.get('a[href="/scan-results"]').text()).toContain('盘点结果')
+  expect(wrapper.get('a[href="/users/register"]').text()).toContain('人员注册')
+  expect(wrapper.get('a[href="/products"]').text()).toContain('品规管理')
 })

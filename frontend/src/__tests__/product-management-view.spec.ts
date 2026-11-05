@@ -1,5 +1,8 @@
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
+
+import { useAuthStore } from '../stores/auth'
 
 const apiMocks = vi.hoisted(() => ({
   listProducts: vi.fn(),
@@ -39,11 +42,24 @@ async function mountView() {
       { path: '/', component: { template: '<div>首页</div>' } },
       { path: '/users/register', component: { template: '<div>人员注册</div>' } },
       { path: '/products', component: ProductManagementView },
+      { path: '/scan-sessions', component: { template: '<div>盘点作业</div>' } },
+      { path: '/scan-results', component: { template: '<div>盘点结果</div>' } },
     ],
   })
   await router.push('/products')
   await router.isReady()
-  return mount(ProductManagementView, { global: { plugins: [router] } })
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const auth = useAuthStore()
+  auth.user = {
+    id: 1,
+    username: 'admin',
+    display_name: '系统管理员',
+    role: 'ADMIN',
+    branch_code: null,
+    branch_name: null,
+  }
+  return mount(ProductManagementView, { global: { plugins: [pinia, router] } })
 }
 
 beforeEach(() => {
@@ -68,6 +84,8 @@ test('品规页展示统计、价格、歧义文字和三项主要操作', async
   expect(wrapper.get('button[data-action="create"]').text()).toContain('新增品规')
   expect(wrapper.get('button[data-action="template"]').text()).toContain('下载模板')
   expect(wrapper.get('label[data-action="import"]').text()).toContain('批量导入')
+  expect(wrapper.get('a[href="/scan-sessions"]').text()).toContain('盘点作业')
+  expect(wrapper.get('a[href="/scan-results"]').text()).toContain('盘点结果')
 })
 
 test('管理员可以在页面新增一个品规版本', async () => {

@@ -10,6 +10,7 @@ import {
   listProducts,
   updateProduct,
 } from '../api/products'
+import AppSidebar from '../components/AppSidebar.vue'
 import type { Product, ProductImportResult, ProductInput } from '../types/catalog'
 
 const products = ref<Product[]>([])
@@ -176,34 +177,7 @@ onMounted(loadProducts)
 
 <template>
   <div class="workspace-shell product-workspace">
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <span class="sidebar-logo">案</span><span>涉案卷烟<br><small>智能统计系统</small></span>
-      </div>
-      <nav aria-label="主导航">
-        <RouterLink
-          class="nav-item"
-          to="/"
-        >
-          <span>⌂</span>系统首页
-        </RouterLink>
-        <RouterLink
-          class="nav-item"
-          to="/users/register"
-        >
-          <span>＋</span>人员注册
-        </RouterLink>
-        <RouterLink
-          class="nav-item active"
-          to="/products"
-        >
-          <span>▦</span>品规管理
-        </RouterLink>
-      </nav>
-      <div class="sidebar-version">
-        内部业务系统<br>Version 0.1.0
-      </div>
-    </aside>
+    <AppSidebar />
     <div class="workspace-main">
       <header class="topbar">
         <div><p>基础数据</p><span>管理扫码识别所需的卷烟品规版本</span></div>

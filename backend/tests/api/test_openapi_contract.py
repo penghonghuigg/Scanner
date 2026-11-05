@@ -124,9 +124,9 @@ def test_openapi_exposes_the_stage_five_scanning_contract() -> None:
     assert set(schemas["ScanCodeRequest"]["properties"]) == {"request_id", "code"}
     assert schemas["ScanCodeRequest"]["properties"]["code"] == {
         "type": "string",
-        "minLength": 13,
-        "maxLength": 13,
-        "pattern": "^\\d{13}$",
+        "minLength": 6,
+        "maxLength": 64,
+        "pattern": "^\\d{6,64}$",
         "title": "Code",
     }
     assert set(schemas["ResolveAmbiguityRequest"]["properties"]) == {
@@ -134,6 +134,18 @@ def test_openapi_exposes_the_stage_five_scanning_contract() -> None:
         "event_id",
         "product_id",
     }
+    assert set(schemas["AdjustCartonQuantityRequest"]["properties"]) == {
+        "request_id",
+        "operation",
+        "quantity",
+        "reason_type",
+        "reason_note",
+    }
+    quantity_schema = schemas["AdjustCartonQuantityRequest"]["properties"]["quantity"]
+    assert any(
+        option.get("multipleOf") == 0.1
+        for option in quantity_schema.get("anyOf", [quantity_schema])
+    )
     assert set(schemas["ProductSnapshotResponse"]["properties"]) == {
         "product_id",
         "carton_code",
@@ -164,6 +176,7 @@ def test_openapi_exposes_the_stage_five_scanning_contract() -> None:
         "product_id",
         "unit_type",
         "delta_sticks",
+        "reason",
         "source_event_id",
         "candidate_snapshot",
         "product_snapshot",
@@ -185,13 +198,169 @@ def test_openapi_exposes_the_stage_five_scanning_contract() -> None:
         "items",
         "recent_events",
         "pending_ambiguities",
+        "catalog_summary",
+        "latest_successful_event",
+    }
+    assert set(schemas["CatalogSummaryResponse"]["properties"]) == {
+        "active_code_count",
+        "active_standard_product_count",
     }
     assert set(schemas["ScanOperationResponse"]["properties"]) == {
         "event",
         "state",
         "idempotent_replay",
     }
+    assert set(schemas["RemoveScanSessionItemRequest"]["properties"]) == {
+        "request_id",
+    }
+    assert schemas["RemoveScanSessionItemRequest"]["additionalProperties"] is False
+    assert set(schemas["ScanEventListPayload"]["properties"]) == {
+        "items",
+        "total",
+        "page",
+        "page_size",
+    }
     paths = openapi["paths"]
     assert "/api/v1/scan-sessions/{session_id}/scan" in paths
     assert "/api/v1/scan-sessions/{session_id}/resolve" in paths
     assert "/api/v1/scan-sessions/{session_id}/scan-state" in paths
+    assert (
+        "/api/v1/scan-sessions/{session_id}/items/{product_id}/carton-quantity"
+        in paths
+    )
+    assert "/api/v1/scan-sessions/{session_id}/items/{product_id}/remove" in paths
+    assert "/api/v1/scan-sessions/{session_id}/events" in paths
+
+
+def test_openapi_exposes_the_stage_six_and_seven_finalization_contract() -> None:
+    app = create_app(
+        Settings(
+            app_env="test",
+            database_url="mysql+pymysql://unused:unused@127.0.0.1:3306/unused",
+            cookie_secure=False,
+        )
+    )
+
+    openapi = app.openapi()
+    paths = openapi["paths"]
+    assert "/api/v1/regions" in paths
+    assert "/api/v1/scan-sessions/{session_id}/source-allocations" in paths
+    assert (
+        "/api/v1/scan-sessions/{session_id}/items/{product_id}/source-allocations"
+        in paths
+    )
+    assert "/api/v1/scan-sessions/{session_id}/complete" in paths
+    assert "/api/v1/scan-sessions/{session_id}/export.xlsx" in paths
+
+    schemas = openapi["components"]["schemas"]
+    assert set(schemas["SourceAllocationInput"]["properties"]) == {
+        "source_type",
+        "province_name",
+        "city_name",
+        "pack_count",
+    }
+    assert set(schemas["ProductSourceAllocationState"]["properties"]) == {
+        "product_id",
+        "product_snapshot",
+        "required_pack_count",
+        "allocated_pack_count",
+        "remaining_pack_count",
+        "allocations",
+    }
+    assert set(schemas["CompleteScanSessionRequest"]["properties"]) == {
+        "confirm_exceptions",
+    }
+
+
+def test_openapi_exposes_completed_result_correction_contract() -> None:
+    app = create_app(
+        Settings(
+            app_env="test",
+            database_url="mysql+pymysql://unused:unused@127.0.0.1:3306/unused",
+            cookie_secure=False,
+        )
+    )
+
+    openapi = app.openapi()
+    paths = openapi["paths"]
+    assert "/api/v1/product-options" in paths
+    assert "/api/v1/scan-sessions/{session_id}/result-items" in paths
+    assert (
+        "/api/v1/scan-sessions/{session_id}/result-items/{product_id}" in paths
+    )
+
+    schemas = openapi["components"]["schemas"]
+    assert set(schemas["ProductOptionResponse"]["properties"]) == {
+        "id",
+        "carton_code",
+        "brand",
+        "standard_name",
+        "carton_retail_price",
+        "sticks_per_pack",
+        "packs_per_carton",
+    }
+    assert set(schemas["ResultItemCreateRequest"]["properties"]) == {
+        "request_id",
+        "product_id",
+        "quantity_cartons",
+        "source_allocations",
+    }
+    assert set(schemas["ResultItemReplaceRequest"]["properties"]) == {
+        "request_id",
+        "quantity_cartons",
+        "source_allocations",
+    }
+    assert set(schemas["ResultItemOperationPayload"]["properties"]) == {
+        "item",
+        "source_state",
+        "event",
+        "idempotent_replay",
+    }
+
+
+def test_openapi_requires_an_adjustment_reason() -> None:
+    app = create_app(
+        Settings(
+            app_env="test",
+            database_url="mysql+pymysql://unused:unused@127.0.0.1:3306/unused",
+            cookie_secure=False,
+        )
+    )
+
+    adjustment = app.openapi()["components"]["schemas"]["AdjustCartonQuantityRequest"]
+    assert set(adjustment["properties"]) == {
+        "request_id",
+        "operation",
+        "quantity",
+        "reason_type",
+        "reason_note",
+    }
+    assert "reason_type" in adjustment["required"]
+
+
+def test_openapi_exposes_stage_eight_integration_contract() -> None:
+    app = create_app(
+        Settings(
+            app_env="test",
+            database_url="mysql+pymysql://unused:unused@127.0.0.1:3306/unused",
+            cookie_secure=False,
+        )
+    )
+
+    openapi = app.openapi()
+    paths = openapi["paths"]
+    assert "/api/v1/scan-sessions/{session_id}/integration-snapshot" in paths
+    assert "/api/v1/scan-sessions/{session_id}/jiandaoyun-import" in paths
+    properties = openapi["components"]["schemas"]["IntegrationSnapshotResponse"][
+        "properties"
+    ]
+    assert set(properties) == {
+        "status",
+        "external_data_id",
+        "attempt_count",
+        "last_error_code",
+        "last_error_message",
+        "created_at",
+        "updated_at",
+        "succeeded_at",
+    }

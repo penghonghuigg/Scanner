@@ -78,6 +78,23 @@ class ProductListPayload(BaseModel):
     summary: ProductSummary
 
 
+class ProductOptionResponse(BaseModel):
+    id: int
+    carton_code: str
+    brand: str
+    standard_name: str
+    carton_retail_price: Decimal | None
+    sticks_per_pack: int
+    packs_per_carton: int
+
+
+class ProductOptionListPayload(BaseModel):
+    items: list[ProductOptionResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 class ImportIssueResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

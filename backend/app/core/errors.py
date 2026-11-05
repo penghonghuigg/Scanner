@@ -39,7 +39,34 @@ def request_validation_error_handler(
             status_code=422,
             content={
                 "success": False,
-                "error": {"code": "BARCODE_INVALID", "message": "编码必须为 13 位数字"},
+                "error": {"code": "BARCODE_INVALID", "message": "编码必须为 6～64 位数字"},
+                "trace_id": request.state.trace_id,
+            },
+        )
+    is_adjustment_error = (
+        request.method == "POST"
+        and len(path_parts) == 7
+        and path_parts[:3] == ["api", "v1", "scan-sessions"]
+        and path_parts[-1] == "carton-quantity"
+        and any(
+            tuple(error["loc"]) == ("body", "reason_type")
+            or (
+                tuple(error["loc"]) == ("body",)
+                and isinstance(error.get("input"), dict)
+                and error["input"].get("reason_type") == "OTHER"
+            )
+            for error in exc.errors()
+        )
+    )
+    if is_adjustment_error:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "success": False,
+                "error": {
+                    "code": "ADJUSTMENT_REASON_REQUIRED",
+                    "message": "请选择或填写人工调整原因",
+                },
                 "trace_id": request.state.trace_id,
             },
         )

@@ -14,6 +14,8 @@ from app.core.security import hash_password
 from app.db.schema import initialize_database
 from app.models.auth import User, UserSession
 from app.models.catalog import CigaretteProduct
+from app.models.finalization import ExportRecord, ScanItemSourceAllocation
+from app.models.integration import IntegrationSnapshot
 from app.models.scanning import ScanEvent, ScanSession, ScanSessionItem
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -44,10 +46,13 @@ def prepare_records() -> dict[str, int]:
     engine = create_engine(database_url_for_test())
     now = datetime.now(UTC).replace(tzinfo=None)
     with Session(engine) as session, session.begin():
+        session.execute(delete(ExportRecord))
+        session.execute(delete(ScanItemSourceAllocation))
         session.execute(delete(ScanEvent).where(ScanEvent.source_event_id.is_not(None)))
         session.execute(delete(ScanEvent))
         session.execute(delete(ScanSessionItem))
         session.execute(delete(UserSession))
+        session.execute(delete(IntegrationSnapshot))
         session.execute(delete(ScanSession))
         session.execute(delete(CigaretteProduct))
         session.execute(delete(User))
@@ -288,10 +293,22 @@ def test_scanning_errors_origin_and_data_scope_are_enforced() -> None:
                     "code": "6900000000101",
                 },
             )
+            valid_responses = []
+            for offset, valid_code in enumerate(("690001", "1" * 64), start=112):
+                valid_responses.append(
+                    await client.post(
+                        f"/api/v1/scan-sessions/{records['operator_batch']}/scan",
+                        json={
+                            "request_id": f"00000000-0000-4000-8000-{offset:012d}",
+                            "code": valid_code,
+                        },
+                        headers={"Origin": "http://testserver"},
+                    )
+                )
             invalid_responses = []
             for offset, invalid_code in enumerate(
-                ("690000000101", "69000000000101", "69000000000000101", "ABC"),
-                start=112,
+                ("69000", "1" * 65, "ABC"),
+                start=114,
             ):
                 invalid_responses.append(
                     await client.post(
@@ -318,10 +335,14 @@ def test_scanning_errors_origin_and_data_scope_are_enforced() -> None:
                 403,
                 "ORIGIN_NOT_ALLOWED",
             )
+            assert [response.status_code for response in valid_responses] == [200, 200]
+            assert [
+                response.json()["data"]["event"]["result"] for response in valid_responses
+            ] == ["UNKNOWN", "UNKNOWN"]
             assert [
                 (response.status_code, response.json()["error"]["code"])
                 for response in invalid_responses
-            ] == [(422, "BARCODE_INVALID")] * 4
+            ] == [(422, "BARCODE_INVALID")] * 3
             assert hidden_state.status_code == 404
             assert hidden_write.status_code == 404
 
@@ -428,6 +449,297 @@ def test_scanning_conflicts_and_closed_session_map_to_spec_errors() -> None:
             assert (closed.status_code, closed.json()["error"]["code"]) == (
                 409,
                 "SCAN_SESSION_CLOSED",
+            )
+
+    asyncio.run(scenario())
+
+
+def test_carton_quantity_adjustment_api_is_persistent_idempotent_and_protected() -> None:
+    records = prepare_records()
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=make_app()), base_url="http://testserver"
+        ) as client:
+            await login(client, "operator", "operator-password")
+            scan_path = f"/api/v1/scan-sessions/{records['operator_batch']}/scan"
+            await client.post(
+                scan_path,
+                json={
+                    "request_id": "00000000-0000-4000-8000-000000000131",
+                    "code": "6900000000101",
+                },
+                headers={"Origin": "http://testserver"},
+            )
+            adjustment_path = (
+                f"/api/v1/scan-sessions/{records['operator_batch']}"
+                f"/items/{records['unique']}/carton-quantity"
+            )
+            payload = {
+                "request_id": "00000000-0000-4000-8000-000000000132",
+                "operation": "DELTA",
+                "quantity": 0.1,
+                "reason_type": "ONSITE_VERIFICATION",
+                "reason_note": None,
+            }
+            adjusted = await client.post(
+                adjustment_path,
+                json=payload,
+                headers={"Origin": "http://testserver"},
+            )
+            replay = await client.post(
+                adjustment_path,
+                json=payload,
+                headers={"Origin": "http://testserver"},
+            )
+            negative = await client.post(
+                adjustment_path,
+                json={
+                    "request_id": "00000000-0000-4000-8000-000000000133",
+                    "operation": "DELTA",
+                    "quantity": -1.2,
+                    "reason_type": "SCAN_CORRECTION",
+                    "reason_note": None,
+                },
+                headers={"Origin": "http://testserver"},
+            )
+            missing = await client.post(
+                f"/api/v1/scan-sessions/{records['operator_batch']}"
+                "/items/999999/carton-quantity",
+                json={
+                    "request_id": "00000000-0000-4000-8000-000000000134",
+                    "operation": "SET",
+                    "quantity": 0,
+                    "reason_type": "ONSITE_VERIFICATION",
+                    "reason_note": None,
+                },
+                headers={"Origin": "http://testserver"},
+            )
+            invalid_precision = await client.post(
+                adjustment_path,
+                json={
+                    "request_id": "00000000-0000-4000-8000-000000000136",
+                    "operation": "SET",
+                    "quantity": 0.15,
+                    "reason_type": "ONSITE_VERIFICATION",
+                    "reason_note": None,
+                },
+                headers={"Origin": "http://testserver"},
+            )
+
+            assert adjusted.status_code == 200
+            assert adjusted.json()["data"]["event"]["event_type"] == "ADJUST"
+            assert adjusted.json()["data"]["event"]["reason"] == (
+                "人工调整条数：增加 0.1 条（1 包）；原因：现场核对修正"
+            )
+            assert adjusted.json()["data"]["state"]["summary"]["total_sticks"] == 220
+            assert replay.json()["data"]["idempotent_replay"] is True
+            assert replay.json()["data"]["state"]["summary"]["total_sticks"] == 220
+            assert (negative.status_code, negative.json()["error"]["code"]) == (
+                422,
+                "NEGATIVE_QUANTITY",
+            )
+            assert (missing.status_code, missing.json()["error"]["code"]) == (
+                404,
+                "SCAN_SESSION_ITEM_NOT_FOUND",
+            )
+            assert (
+                invalid_precision.status_code,
+                invalid_precision.json()["error"]["code"],
+            ) == (422, "VALIDATION_ERROR")
+
+            await login(client, "viewer", "viewer-password")
+            forbidden = await client.post(
+                adjustment_path,
+                json={
+                    "request_id": "00000000-0000-4000-8000-000000000135",
+                    "operation": "DELTA",
+                    "quantity": 0.1,
+                    "reason_type": "ONSITE_VERIFICATION",
+                    "reason_note": None,
+                },
+                headers={"Origin": "http://testserver"},
+            )
+            assert (forbidden.status_code, forbidden.json()["error"]["code"]) == (
+                403,
+                "FORBIDDEN",
+            )
+
+    asyncio.run(scenario())
+
+
+def test_carton_adjustment_api_requires_an_approved_reason() -> None:
+    records = prepare_records()
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=make_app()), base_url="http://testserver"
+        ) as client:
+            await login(client, "operator", "operator-password")
+            scan_path = f"/api/v1/scan-sessions/{records['operator_batch']}/scan"
+            await client.post(
+                scan_path,
+                json={
+                    "request_id": "00000000-0000-4000-8000-000000000181",
+                    "code": "6900000000101",
+                },
+                headers={"Origin": "http://testserver"},
+            )
+            path = (
+                f"/api/v1/scan-sessions/{records['operator_batch']}"
+                f"/items/{records['unique']}/carton-quantity"
+            )
+            missing = await client.post(
+                path,
+                json={
+                    "request_id": "00000000-0000-4000-8000-000000000182",
+                    "operation": "DELTA",
+                    "quantity": 0.1,
+                },
+                headers={"Origin": "http://testserver"},
+            )
+            other_without_note = await client.post(
+                path,
+                json={
+                    "request_id": "00000000-0000-4000-8000-000000000183",
+                    "operation": "DELTA",
+                    "quantity": 0.1,
+                    "reason_type": "OTHER",
+                },
+                headers={"Origin": "http://testserver"},
+            )
+            assert (missing.status_code, missing.json()["error"]["code"]) == (
+                422,
+                "ADJUSTMENT_REASON_REQUIRED",
+            )
+            assert (
+                other_without_note.status_code,
+                other_without_note.json()["error"]["code"],
+            ) == (422, "ADJUSTMENT_REASON_REQUIRED")
+
+    asyncio.run(scenario())
+
+
+def test_scan_event_api_paginates_ten_rows_and_allows_read_only_users() -> None:
+    records = prepare_records()
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=make_app()), base_url="http://testserver"
+        ) as client:
+            await login(client, "operator", "operator-password")
+            scan_path = f"/api/v1/scan-sessions/{records['operator_batch']}/scan"
+            for index in range(12):
+                response = await client.post(
+                    scan_path,
+                    json={
+                        "request_id": f"00000000-0000-4000-8000-{600 + index:012d}",
+                        "code": f"6999998{index:06d}",
+                    },
+                    headers={"Origin": "http://testserver"},
+                )
+                assert response.status_code == 200
+
+            first = await client.get(
+                f"/api/v1/scan-sessions/{records['operator_batch']}/events"
+                "?page=1&page_size=10"
+            )
+            second = await client.get(
+                f"/api/v1/scan-sessions/{records['operator_batch']}/events"
+                "?page=2&page_size=10"
+            )
+            assert first.status_code == 200
+            assert first.json()["data"]["total"] == 12
+            assert len(first.json()["data"]["items"]) == 10
+            assert second.json()["data"]["page"] == 2
+            assert len(second.json()["data"]["items"]) == 2
+
+            await login(client, "viewer", "viewer-password")
+            readable = await client.get(
+                f"/api/v1/scan-sessions/{records['operator_batch']}/events"
+                "?page=1&page_size=10"
+            )
+            assert readable.status_code == 200
+            assert readable.json()["data"]["total"] == 12
+
+    asyncio.run(scenario())
+
+
+def test_remove_session_item_api_updates_state_replays_and_enforces_permissions() -> None:
+    records = prepare_records()
+
+    async def scenario() -> None:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=make_app()), base_url="http://testserver"
+        ) as client:
+            await login(client, "operator", "operator-password")
+            scan_path = f"/api/v1/scan-sessions/{records['operator_batch']}/scan"
+            scanned = await client.post(
+                scan_path,
+                json={
+                    "request_id": "00000000-0000-4000-8000-000000000701",
+                    "code": "6900000000101",
+                },
+                headers={"Origin": "http://testserver"},
+            )
+            assert scanned.status_code == 200
+
+            remove_path = (
+                f"/api/v1/scan-sessions/{records['operator_batch']}"
+                f"/items/{records['unique']}/remove"
+            )
+            payload = {
+                "request_id": "00000000-0000-4000-8000-000000000702",
+            }
+            no_origin = await client.post(remove_path, json=payload)
+            removed = await client.post(
+                remove_path,
+                json=payload,
+                headers={"Origin": "http://testserver"},
+            )
+            replay = await client.post(
+                remove_path,
+                json=payload,
+                headers={"Origin": "http://testserver"},
+            )
+            missing = await client.post(
+                remove_path,
+                json={
+                    "request_id": "00000000-0000-4000-8000-000000000703",
+                },
+                headers={"Origin": "http://testserver"},
+            )
+
+            assert (no_origin.status_code, no_origin.json()["error"]["code"]) == (
+                403,
+                "ORIGIN_NOT_ALLOWED",
+            )
+            assert removed.status_code == 200
+            assert removed.json()["data"]["event"]["reason"] == (
+                "删除品规统计：数量归零并隐藏"
+            )
+            assert removed.json()["data"]["event"]["delta_sticks"] == -200
+            assert removed.json()["data"]["state"]["summary"]["product_count"] == 0
+            assert removed.json()["data"]["state"]["summary"]["total_sticks"] == 0
+            assert removed.json()["data"]["state"]["items"] == []
+            assert replay.status_code == 200
+            assert replay.json()["data"]["idempotent_replay"] is True
+            assert (missing.status_code, missing.json()["error"]["code"]) == (
+                404,
+                "SCAN_SESSION_ITEM_NOT_FOUND",
+            )
+
+            await login(client, "viewer", "viewer-password")
+            forbidden = await client.post(
+                remove_path,
+                json={
+                    "request_id": "00000000-0000-4000-8000-000000000704",
+                },
+                headers={"Origin": "http://testserver"},
+            )
+            assert (forbidden.status_code, forbidden.json()["error"]["code"]) == (
+                403,
+                "FORBIDDEN",
             )
 
     asyncio.run(scenario())

@@ -12,6 +12,8 @@ from app.core.config import Settings
 from app.core.security import hash_password, verify_password
 from app.db.schema import initialize_database
 from app.models.auth import User, UserSession
+from app.models.finalization import ExportRecord, ScanItemSourceAllocation
+from app.models.integration import IntegrationSnapshot
 from app.models.scanning import ScanEvent, ScanSession, ScanSessionItem
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -30,10 +32,13 @@ def prepare_users() -> None:
     engine = create_engine(database_url)
     now = datetime.now(UTC).replace(tzinfo=None)
     with Session(engine) as session, session.begin():
+        session.execute(delete(ExportRecord))
+        session.execute(delete(ScanItemSourceAllocation))
         session.execute(delete(ScanEvent).where(ScanEvent.source_event_id.is_not(None)))
         session.execute(delete(ScanEvent))
         session.execute(delete(ScanSessionItem))
         session.execute(delete(UserSession))
+        session.execute(delete(IntegrationSnapshot))
         session.execute(delete(ScanSession))
         session.execute(delete(User))
         session.add_all(

@@ -21,3 +21,17 @@ def test_database_url_cannot_be_empty() -> None:
 
     with pytest.raises(ValidationError):
         Settings(database_url="")
+
+
+def test_production_settings_accept_secure_https_origin() -> None:
+    from app.core.config import Settings
+
+    settings = Settings(
+        app_env="production",
+        database_url="mysql+pymysql://scanner:secret@scanner-mysql/scanner",
+        cookie_secure=True,
+        allowed_origins="https://203.0.113.10",
+    )
+
+    assert settings.cookie_secure is True
+    assert settings.allowed_origin_set == frozenset({"https://203.0.113.10"})

@@ -3,13 +3,20 @@ from fastapi import APIRouter, Query, Request
 from app.api.dependencies import CurrentUser, DatabaseSession
 from app.core.errors import BusinessError
 from app.scanning.scan_service import (
+    AdjustmentReasonRequiredError,
     AmbiguityAlreadyResolvedError,
     AmbiguityCandidateInvalidError,
     BarcodeInvalidError,
     IdempotencyConflictError,
+    NegativeQuantityError,
+    QuantityAdjustmentInvalidError,
     ScanEventNotFoundError,
     ScanSessionClosedError,
+    ScanSessionItemNotFoundError,
+    adjust_carton_quantity,
     get_scan_state,
+    list_scan_events,
+    remove_session_item,
     resolve_ambiguity,
     scan_code,
     serialize_operation_event,
@@ -28,9 +35,12 @@ from app.scanning.service import (
 )
 from app.schemas.common import SuccessEnvelope
 from app.schemas.scanning import (
+    AdjustCartonQuantityRequest,
     CreateScanSessionRequest,
+    RemoveScanSessionItemRequest,
     ResolveAmbiguityRequest,
     ScanCodeRequest,
+    ScanEventListPayload,
     ScanOperationResponse,
     ScanSessionListPayload,
     ScanSessionPayload,
@@ -65,6 +75,14 @@ def map_scanning_error(exc: Exception) -> BusinessError:
         return BusinessError(409, "SCAN_SESSION_CLOSED", str(exc))
     if isinstance(exc, IdempotencyConflictError):
         return BusinessError(409, "IDEMPOTENCY_CONFLICT", str(exc))
+    if isinstance(exc, NegativeQuantityError):
+        return BusinessError(422, "NEGATIVE_QUANTITY", str(exc))
+    if isinstance(exc, ScanSessionItemNotFoundError):
+        return BusinessError(404, "SCAN_SESSION_ITEM_NOT_FOUND", str(exc))
+    if isinstance(exc, QuantityAdjustmentInvalidError):
+        return BusinessError(422, "VALIDATION_ERROR", str(exc))
+    if isinstance(exc, AdjustmentReasonRequiredError):
+        return BusinessError(422, "ADJUSTMENT_REASON_REQUIRED", str(exc))
     if isinstance(exc, ScanEventNotFoundError):
         return BusinessError(404, "SCAN_EVENT_NOT_FOUND", str(exc))
     if isinstance(exc, AmbiguityAlreadyResolvedError):
@@ -241,6 +259,109 @@ def post_resolve_ambiguity(
     except ValueError as exc:
         raise map_scanning_error(exc) from exc
     return SuccessEnvelope(data=data, trace_id=request.state.trace_id)
+
+
+@router.post(
+    "/{session_id}/items/{product_id}/carton-quantity",
+    response_model=SuccessEnvelope[ScanOperationResponse],
+)
+def post_carton_quantity_adjustment(
+    session_id: int,
+    product_id: int,
+    payload: AdjustCartonQuantityRequest,
+    request: Request,
+    current_user: CurrentUser,
+    session: DatabaseSession,
+) -> SuccessEnvelope[ScanOperationResponse]:
+    require_allowed_origin(request)
+    try:
+        result = adjust_carton_quantity(
+            session,
+            current_user,
+            session_id,
+            product_id,
+            str(payload.request_id),
+            payload.operation,
+            payload.quantity,
+            reason_type=payload.reason_type,
+            reason_note=payload.reason_note,
+        )
+        data = operation_response(
+            session,
+            current_user,
+            session_id,
+            result.event,
+            result.idempotent_replay,
+        )
+    except ValueError as exc:
+        raise map_scanning_error(exc) from exc
+    return SuccessEnvelope(data=data, trace_id=request.state.trace_id)
+
+
+@router.post(
+    "/{session_id}/items/{product_id}/remove",
+    response_model=SuccessEnvelope[ScanOperationResponse],
+)
+def post_remove_scan_session_item(
+    session_id: int,
+    product_id: int,
+    payload: RemoveScanSessionItemRequest,
+    request: Request,
+    current_user: CurrentUser,
+    session: DatabaseSession,
+) -> SuccessEnvelope[ScanOperationResponse]:
+    require_allowed_origin(request)
+    try:
+        result = remove_session_item(
+            session,
+            current_user,
+            session_id,
+            product_id,
+            str(payload.request_id),
+        )
+        data = operation_response(
+            session,
+            current_user,
+            session_id,
+            result.event,
+            result.idempotent_replay,
+        )
+    except ValueError as exc:
+        raise map_scanning_error(exc) from exc
+    return SuccessEnvelope(data=data, trace_id=request.state.trace_id)
+
+
+@router.get(
+    "/{session_id}/events",
+    response_model=SuccessEnvelope[ScanEventListPayload],
+)
+def get_session_scan_events(
+    session_id: int,
+    request: Request,
+    current_user: CurrentUser,
+    session: DatabaseSession,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+) -> SuccessEnvelope[ScanEventListPayload]:
+    try:
+        result = list_scan_events(
+            session,
+            current_user,
+            session_id,
+            page=page,
+            page_size=page_size,
+        )
+    except ValueError as exc:
+        raise map_scanning_error(exc) from exc
+    return SuccessEnvelope(
+        data=ScanEventListPayload(
+            items=result.items,
+            total=result.total,
+            page=page,
+            page_size=page_size,
+        ),
+        trace_id=request.state.trace_id,
+    )
 
 
 @router.get(

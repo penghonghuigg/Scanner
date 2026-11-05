@@ -1,0 +1,28 @@
+Set-Location C:\Users\彭鸿徽\Desktop\Demo
+
+docker compose --env-file .env -f compose.dev.yaml up -d --wait
+docker compose --env-file .env -f compose.dev.yaml ps
+
+
+------------------------------------------------------------------------------------
+
+
+Set-Location C:\Users\彭鸿徽\Desktop\Demo
+
+docker compose --env-file .env -f compose.dev.yaml up -d --wait
+docker compose --env-file .env -f compose.dev.yaml ps
+
+
+------------------------------------------------------------------------------------
+
+
+Set-Location C:\Users\彭鸿徽\Desktop\Demo
+
+npm.cmd --prefix frontend run dev -- --host 0.0.0.0
+
+
+------------------------------------------------------------------------------------
+
+
+
+http://localhost:8080/login

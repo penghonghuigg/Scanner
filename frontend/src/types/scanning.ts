@@ -9,6 +9,22 @@ export const BUSINESS_TYPES = [
 
 export type BusinessType = (typeof BUSINESS_TYPES)[number]['value']
 export type ScanSessionStatus = 'DRAFT' | 'COMPLETED'
+export type IntegrationStatus = 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'UNCERTAIN'
+
+export interface IntegrationSnapshot {
+  status: IntegrationStatus
+  external_data_id: string | null
+  attempt_count: number
+  last_error_code: string | null
+  last_error_message: string | null
+  created_at: string
+  updated_at: string
+  succeeded_at: string | null
+}
+
+export interface IntegrationSnapshotPayload {
+  snapshot: IntegrationSnapshot | null
+}
 
 export interface ScanSession {
   id: number
@@ -90,6 +106,7 @@ export interface ScanEvent {
   product_id: number | null
   unit_type: ScanUnitType | null
   delta_sticks: number
+  reason: string | null
   source_event_id: number | null
   candidate_snapshot: ProductSnapshot[] | null
   product_snapshot: ProductSnapshot | null
@@ -113,6 +130,13 @@ export interface ScanState {
   items: ScanSessionItem[]
   recent_events: ScanEvent[]
   pending_ambiguities: ScanEvent[]
+  catalog_summary: CatalogSummary
+  latest_successful_event: ScanEvent | null
+}
+
+export interface CatalogSummary {
+  active_code_count: number
+  active_standard_product_count: number
 }
 
 export interface ScanCodeInput {
@@ -124,6 +148,136 @@ export interface ResolveAmbiguityInput {
   request_id: string
   event_id: number
   product_id: number
+}
+
+export interface AdjustCartonQuantityInput {
+  request_id: string
+  operation: 'DELTA' | 'SET'
+  quantity: number
+  reason_type: AdjustmentReasonType
+  reason_note?: string
+}
+
+export type AdjustmentReasonType =
+  | 'ONSITE_VERIFICATION'
+  | 'SCAN_CORRECTION'
+  | 'LOOSE_PACK_VERIFICATION'
+  | 'OTHER'
+
+export type SourceType =
+  | 'OUTSIDE_PROVINCE'
+  | 'UNKNOWN'
+  | 'LOCAL_HUAINAN'
+  | 'ANHUI_OTHER_CITY'
+
+export interface SourceTypeOption {
+  value: SourceType
+  label: string
+}
+
+export interface RegionProvince {
+  name: string
+  cities: Array<{ name: string }>
+}
+
+export interface RegionCatalog {
+  source_types: SourceTypeOption[]
+  provinces: RegionProvince[]
+}
+
+export interface SourceAllocationInput {
+  source_type: SourceType
+  province_name: string | null
+  city_name: string | null
+  pack_count: number
+}
+
+export interface SourceAllocation extends SourceAllocationInput {
+  id: number
+  source_type_name: string
+  equivalent_cartons: string
+  quantity_sticks: number
+}
+
+export interface ProductSourceAllocationState {
+  product_id: number
+  product_snapshot: ProductSnapshot
+  required_pack_count: number
+  allocated_pack_count: number
+  remaining_pack_count: number
+  allocations: SourceAllocation[]
+}
+
+export interface ProductOption {
+  id: number
+  carton_code: string
+  brand: string
+  standard_name: string
+  carton_retail_price: string | null
+  sticks_per_pack: number
+  packs_per_carton: number
+}
+
+export interface ProductOptionListPayload {
+  items: ProductOption[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface ResultItemInput {
+  request_id: string
+  quantity_cartons: number
+  source_allocations: SourceAllocationInput[]
+}
+
+export interface AddResultItemInput extends ResultItemInput {
+  product_id: number
+}
+
+export interface ResultItemOperation {
+  item: ScanSessionItem
+  source_state: ProductSourceAllocationState
+  event: ScanEvent
+  idempotent_replay: boolean
+}
+
+export interface SourceAllocationListPayload {
+  items: ProductSourceAllocationState[]
+}
+
+export interface CompleteScanSessionInput {
+  confirm_exceptions: boolean
+}
+
+export interface CompletionSummary {
+  scan_session: ScanSession
+  summary: ScanSummary
+  source_product_count: number
+  source_allocated_product_count: number
+  unknown_count: number
+  unresolved_ambiguity_count: number
+}
+
+export interface DownloadedFile {
+  blob: Blob
+  filename: string
+}
+
+export interface RemoveScanSessionItemInput {
+  request_id: string
+}
+
+export interface ScanEventQuery {
+  page: number
+  page_size: number
+}
+
+export interface ScanEventPage {
+  items: ScanEvent[]
+  total: number
+  page: number
+  page_size: number
 }
 
 export interface ScanOperation {

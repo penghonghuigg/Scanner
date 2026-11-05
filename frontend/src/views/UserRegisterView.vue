@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { registerUser } from '../api/users'
+import AppSidebar from '../components/AppSidebar.vue'
 import { BRANCH_NAMES, BRANCH_VALUES, type AuthUser, type BranchCode } from '../types/auth'
 
 const router = useRouter()
@@ -56,34 +57,7 @@ async function submit(): Promise<void> {
 
 <template>
   <div class="workspace-shell">
-    <aside class="sidebar">
-      <div class="sidebar-brand">
-        <span class="sidebar-logo">案</span><span>涉案卷烟<br><small>智能统计系统</small></span>
-      </div>
-      <nav aria-label="主导航">
-        <RouterLink
-          class="nav-item"
-          to="/"
-        >
-          <span>⌂</span>系统首页
-        </RouterLink>
-        <RouterLink
-          class="nav-item active"
-          to="/users/register"
-        >
-          <span>＋</span>人员注册
-        </RouterLink>
-        <RouterLink
-          class="nav-item"
-          to="/products"
-        >
-          <span>▦</span>品规管理
-        </RouterLink>
-      </nav>
-      <div class="sidebar-version">
-        内部业务系统<br>Version 0.1.0
-      </div>
-    </aside>
+    <AppSidebar />
     <div class="workspace-main">
       <header class="topbar">
         <div><p>人员注册</p><span>为工作人员创建独立账号并绑定所属分局</span></div>

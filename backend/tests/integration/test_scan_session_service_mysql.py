@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from app.core.security import hash_password
 from app.db.schema import initialize_database
 from app.models.auth import User, UserSession
+from app.models.finalization import ExportRecord, ScanItemSourceAllocation
+from app.models.integration import IntegrationSnapshot
 from app.models.scanning import ScanEvent, ScanSession, ScanSessionItem
 from app.schemas.auth import AuthUser
 
@@ -40,10 +42,13 @@ def prepare_users() -> dict[str, AuthUser]:
     engine = create_engine(database_url_for_test())
     now = datetime.now(UTC).replace(tzinfo=None)
     with Session(engine) as session, session.begin():
+        session.execute(delete(ExportRecord))
+        session.execute(delete(ScanItemSourceAllocation))
         session.execute(delete(ScanEvent).where(ScanEvent.source_event_id.is_not(None)))
         session.execute(delete(ScanEvent))
         session.execute(delete(ScanSessionItem))
         session.execute(delete(UserSession))
+        session.execute(delete(IntegrationSnapshot))
         session.execute(delete(ScanSession))
         session.execute(delete(User))
         models = [
