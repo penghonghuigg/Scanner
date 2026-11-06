@@ -1,6 +1,7 @@
 /.codex/
 /.env
 /.env.production
+/.env.http.production
 /.worktrees/
 /backend/.venv/
 /frontend/node_modules/

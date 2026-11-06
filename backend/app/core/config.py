@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     app_env: Literal["development", "test", "production"] = "development"
     database_url: str = Field(min_length=1)
     cookie_secure: bool = False
+    allow_insecure_http: bool = False
     session_ttl_hours: int = Field(default=8, ge=1, le=24)
     allowed_origins: str = "http://localhost:8080"
     jiandaoyun_create_url: str = ""
@@ -26,7 +27,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def require_secure_production_cookie(self) -> "Settings":
-        if self.app_env == "production" and not self.cookie_secure:
+        if (
+            self.app_env == "production"
+            and not self.cookie_secure
+            and not self.allow_insecure_http
+        ):
             raise ValueError("生产环境必须启用 Secure Cookie")
         return self
 

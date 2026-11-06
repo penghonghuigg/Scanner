@@ -10,8 +10,8 @@ fi
 backup_file="$(realpath -- "$1")"
 restore_database="$2"
 scanner_root="${SCANNER_ROOT:-/opt/scanner}"
-compose_file="${scanner_root}/app/compose.prod.yaml"
-env_file="${scanner_root}/config/.env"
+compose_file="${SCANNER_COMPOSE_FILE:-${scanner_root}/app/compose.prod.yaml}"
+env_file="${SCANNER_ENV_FILE:-${scanner_root}/config/.env}"
 
 if [[ ! -f "${backup_file}" || "${backup_file}" != *.sql.gz ]]; then
   printf '备份文件不存在或扩展名错误\n' >&2

@@ -1,0 +1,2 @@
+MAILTO=""
+0 3 1 * * root SCANNER_COMPOSE_FILE=/opt/scanner/app/compose.http.yaml SCANNER_ENV_FILE=/opt/scanner/config/.env.http.production /opt/scanner/app/deploy/scripts/backup_mysql.sh 2>&1 | systemd-cat -t scanner-backup

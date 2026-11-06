@@ -3,8 +3,8 @@ set -Eeuo pipefail
 umask 077
 
 scanner_root="${SCANNER_ROOT:-/opt/scanner}"
-compose_file="${scanner_root}/app/compose.prod.yaml"
-env_file="${scanner_root}/config/.env"
+compose_file="${SCANNER_COMPOSE_FILE:-${scanner_root}/app/compose.prod.yaml}"
+env_file="${SCANNER_ENV_FILE:-${scanner_root}/config/.env}"
 backup_dir="${scanner_root}/backups"
 timestamp="$(date -u +%Y%m%d-%H%M%S)"
 target="${backup_dir}/scanner-${timestamp}.sql.gz"

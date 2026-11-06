@@ -16,6 +16,22 @@ def test_production_rejects_insecure_session_cookie() -> None:
         )
 
 
+def test_production_allows_insecure_cookie_only_with_explicit_http_override() -> None:
+    from app.core.config import Settings
+
+    settings = Settings(
+        app_env="production",
+        database_url="mysql+pymysql://scanner:secret@mysql/scanner",
+        cookie_secure=False,
+        allow_insecure_http=True,
+        allowed_origins="http://203.0.113.10",
+    )
+
+    assert settings.cookie_secure is False
+    assert settings.allow_insecure_http is True
+    assert settings.allowed_origin_set == frozenset({"http://203.0.113.10"})
+
+
 def test_database_url_cannot_be_empty() -> None:
     from app.core.config import Settings
 
