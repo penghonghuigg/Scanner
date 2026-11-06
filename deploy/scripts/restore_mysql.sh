@@ -41,10 +41,23 @@ printf 'CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;\n
   | docker compose --env-file "${env_file}" -f "${compose_file}" exec -T scanner-mysql \
       sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot'
 
-gzip -cd -- "${backup_file}" \
-  | docker compose --env-file "${env_file}" -f "${compose_file}" exec -T \
-      -e RESTORE_DATABASE="${restore_database}" scanner-mysql \
-      sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot "$RESTORE_DATABASE"'
+mysql_container="$(docker compose --env-file "${env_file}" -f "${compose_file}" ps -q scanner-mysql)"
+if [[ -z "${mysql_container}" ]]; then
+  printf '未找到 MySQL 容器\n' >&2
+  exit 1
+fi
+
+container_archive="/tmp/scanner-restore-${restore_database}-$$.sql.gz"
+cleanup_container_archive() {
+  docker exec "${mysql_container}" rm -f -- "${container_archive}" >/dev/null 2>&1 || true
+}
+trap cleanup_container_archive EXIT
+
+docker cp "${backup_file}" "${mysql_container}:${container_archive}"
+docker compose --env-file "${env_file}" -f "${compose_file}" exec -T \
+  -e RESTORE_ARCHIVE="${container_archive}" \
+  -e RESTORE_DATABASE="${restore_database}" scanner-mysql \
+  sh -c 'gzip -cd -- "$RESTORE_ARCHIVE" | MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot "$RESTORE_DATABASE"'
 
 docker compose --env-file "${env_file}" -f "${compose_file}" exec -T \
   -e RESTORE_DATABASE="${restore_database}" scanner-mysql \
