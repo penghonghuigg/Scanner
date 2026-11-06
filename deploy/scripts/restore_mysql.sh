@@ -54,9 +54,9 @@ cleanup_container_archive() {
 trap cleanup_container_archive EXIT
 
 docker cp "${backup_file}" "${mysql_container}:${container_archive}"
-docker compose --env-file "${env_file}" -f "${compose_file}" exec -T \
+docker exec \
   -e RESTORE_ARCHIVE="${container_archive}" \
-  -e RESTORE_DATABASE="${restore_database}" scanner-mysql \
+  -e RESTORE_DATABASE="${restore_database}" "${mysql_container}" \
   sh -c 'gzip -cd -- "$RESTORE_ARCHIVE" | MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot "$RESTORE_DATABASE"'
 
 docker compose --env-file "${env_file}" -f "${compose_file}" exec -T \
